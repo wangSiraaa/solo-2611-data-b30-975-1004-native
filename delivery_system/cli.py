@@ -429,6 +429,15 @@ def cmd_run_operations(args: argparse.Namespace) -> int:
     return 0 if ok else 3
 
 
+def cmd_annotation_demo(args: argparse.Namespace) -> int:
+    """Run the editorial-note proofing + pagination worked scenarios."""
+
+    from .annotation_demo import run_annotation_demo
+
+    _emit(run_annotation_demo())
+    return 0
+
+
 def cmd_demo(args: argparse.Namespace) -> int:
     """End-to-end run over materials/753 using a throw-away temp directory."""
 
@@ -517,6 +526,11 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--operations", required=True)
 
     add("demo", cmd_demo, "run the end-to-end materials/753 demo")
+    add(
+        "annotation-demo",
+        cmd_annotation_demo,
+        "run editorial-note proof-sheet and pagination scenarios",
+    )
     return p
 
 

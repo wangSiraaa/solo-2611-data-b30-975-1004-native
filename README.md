@@ -88,3 +88,31 @@ content_sha256/created_at/source_release`。包一旦写入即不可变：同 id
 测试覆盖 100 源段 / 5 语言 / ≥500 译文（含大量重叠诱饵），验证每语言精确覆盖、
 诱饵从不入选、更正后按缺口隔离、补译后恢复。覆盖是 O(n·k) 区间 DP，
 足以支撑题目规模；未引入翻译、语义评分、账号等平台能力。
+
+## 编注、清样与分页排注（annotation_*）
+对应“两段译文引用同一条编注，哪几条注可以留在当页”的子系统，纯 Python，
+不依赖 SQLite，与覆盖侧共用不可变值对象风格。
+
+```bash
+python3 -m delivery_system annotation-demo   # 三个数值例 + 分叉汇合 + 四类拒签
+python3 -m unittest tests.test_annotations -v
+```
+
+- `annotation_models.py`：`NoteRef(note_id, edition)` 精确钉版；`NoteDefinition`
+  带行数、依赖、册末翻查代价；`SegmentNoteMarkers` 是冻结在段修订上的标记契约
+  （含 mandatory）；`ProofSheet/NoteReading/PageLayout/TypesetResult`。
+- `annotations.py`：
+  - `NoteRegistry`：注的版次不可变，签新版不影响旧引用；`expand` 沿依赖完整
+    展开，同一版定义经多条路径只读一次（路径与来源段全部留痕），遇悬空、环拒签。
+  - `build_proof_sheet`：为每个入选块出独立清样。标记必须来自该块确实覆盖的段
+    修订、与登记版匹配；mandatory 一个不漏；一个块引用同编号互不兼容的版次拒签。
+    拒签不影响别处对已签版次的读取。
+  - `typeset`：块按包序连续分页、不可拆；每条定义全书选一个去处——页脚（在每个
+    需要它的正文页各排一次、占页行但零翻查）或册末（不限长附录只排一次，但每被
+    一个正文页遇到就计一次该注代价）。分页用有界状态 DP（键含页数/开页/行数/注
+    掩码，受页高与页数上限约束，保留所有更稀疏分页），放置用分支限界精确求解；
+    目标先最小化总翻查代价，再取正文页最少，并由 `render_page_sample` 出具体页样。
+- `annotation_demo.py` 复现题面数值：两块各 2 行 / 页高 5 / 上限 1 页，共享 N 时
+  同页脚注、代价 0；B2 改引 M（N、M 代价 4、1）后一页内只能把 M 放册末、代价 1；
+  额度放到两页则各占一页、代价 0；另有 R→{A,B}→C 的分叉汇合，C 经两条路径只读
+  一次。200 块规模测试验证有界 DP 在亚秒级完成且不溢出页上限。

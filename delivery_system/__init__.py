@@ -13,6 +13,24 @@ Two deliberately separate sides:
 No translation or semantic scoring happens here: text is opaque.
 """
 
+from .annotation_demo import run_annotation_demo
+from .annotation_models import (
+    BlockSpec,
+    NoteDefinition,
+    NoteReading,
+    NoteRef,
+    PageLayout,
+    ProofSheet,
+    SegmentNoteMarkers,
+    TypesetResult,
+)
+from .annotations import (
+    BlockInput,
+    NoteRegistry,
+    build_proof_sheet,
+    render_page_sample,
+    typeset,
+)
 from .coverage import solve_cover
 from .delivery_repository import DeliveryRepository
 from .models import (
@@ -28,15 +46,29 @@ from .models import (
 from .source_catalog import SourceCatalog
 
 __all__ = [
+    "BlockInput",
+    "BlockSpec",
     "CoverChunk",
     "CoverDiagnosis",
     "CoverResult",
     "DeliveryRepository",
+    "NoteDefinition",
+    "NoteReading",
+    "NoteRef",
+    "NoteRegistry",
+    "PageLayout",
+    "ProofSheet",
+    "SegmentNoteMarkers",
     "SourceCatalog",
     "SourceProduct",
     "SourceRef",
     "SourceSegment",
     "TranslationAssessment",
     "TranslationEntry",
+    "TypesetResult",
+    "build_proof_sheet",
+    "render_page_sample",
+    "run_annotation_demo",
     "solve_cover",
+    "typeset",
 ]
