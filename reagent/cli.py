@@ -10,6 +10,7 @@ import threading
 
 from .errors import ReagentError
 from .inventory import InventoryService
+from .deposits import DepositService
 from .runs import RunService
 from .schema import connect, initialize
 
@@ -149,6 +150,130 @@ def cmd_run_ops(args: argparse.Namespace) -> dict:
     return {"results": results}
 
 
+# -- deposit / clearance / shipping -----------------------------------------
+def cmd_credential(args: argparse.Namespace) -> dict:
+    conn = connect(args.db)
+    result = DepositService(conn).credential(args.bottle)
+    conn.close()
+    return result
+
+
+def cmd_explain_voucher(args: argparse.Namespace) -> dict:
+    conn = connect(args.db)
+    result = DepositService(conn).explain_voucher(args.bottle, args.day)
+    conn.close()
+    return result
+
+
+def cmd_recount(args: argparse.Namespace) -> dict:
+    conn = connect(args.db)
+    result = DepositService(conn).recount(args.bottle, args.day)
+    conn.close()
+    return result
+
+
+def cmd_open_clearance(args: argparse.Namespace) -> dict:
+    conn = connect(args.db)
+    result = DepositService(conn).open_clearance(
+        args.bottle, args.portions, args.day
+    )
+    conn.close()
+    return result
+
+
+def cmd_sign_clearance(args: argparse.Namespace) -> dict:
+    conn = connect(args.db)
+    result = DepositService(conn).sign_clearance(
+        args.request_id,
+        args.counter_id,
+        args.day,
+        inventory_version=args.inventory_version,
+        portions=args.portions,
+    )
+    conn.close()
+    return result
+
+
+def cmd_get_clearance(args: argparse.Namespace) -> dict:
+    conn = connect(args.db)
+    result = DepositService(conn).clearance_view(args.request_id)
+    conn.close()
+    return result
+
+
+def cmd_apply_voucher(args: argparse.Namespace) -> dict:
+    conn = connect(args.db)
+    result = DepositService(conn).apply_voucher(args.bottle, args.day)
+    conn.close()
+    return result
+
+
+def cmd_add_trip(args: argparse.Namespace) -> dict:
+    conn = connect(args.db)
+    result = DepositService(conn).add_trip(
+        args.trip_id, args.departure_day, args.arrival_day, args.max_boxes
+    )
+    conn.close()
+    return result
+
+
+def cmd_add_box(args: argparse.Namespace) -> dict:
+    conn = connect(args.db)
+    result = DepositService(conn).add_box_model(
+        args.model_id, args.slots, args.kind
+    )
+    conn.close()
+    return result
+
+
+def cmd_add_offer(args: argparse.Namespace) -> dict:
+    conn = connect(args.db)
+    result = DepositService(conn).add_trip_offer(
+        args.trip_id, args.model_id, args.price
+    )
+    conn.close()
+    return result
+
+
+def cmd_add_supplier_kind(args: argparse.Namespace) -> dict:
+    conn = connect(args.db)
+    result = DepositService(conn).add_supplier_kind(args.supplier, args.kind)
+    conn.close()
+    return result
+
+
+def cmd_plan(args: argparse.Namespace) -> dict:
+    conn = connect(args.db)
+    result = DepositService(conn).plan_shipment(
+        args.day, args.max_bottles, args.max_trips
+    )
+    conn.close()
+    return result
+
+
+def cmd_ship(args: argparse.Namespace) -> dict:
+    conn = connect(args.db)
+    result = DepositService(conn).ship(
+        args.day, args.shipment_id, args.max_bottles, args.max_trips
+    )
+    conn.close()
+    return result
+
+
+def cmd_get_shipment(args: argparse.Namespace) -> dict:
+    conn = connect(args.db)
+    result = DepositService(conn).shipment_view(args.shipment_id)
+    conn.close()
+    return result
+
+
+def cmd_vouchers(args: argparse.Namespace) -> dict:
+    conn = connect(args.db)
+    result = DepositService(conn).vouchers(args.status)
+    conn.close()
+    return {"vouchers": result}
+
+
 # ---------------------------------------------------------------------------
 # operation file executor (also used by tests)
 # ---------------------------------------------------------------------------
@@ -175,9 +300,10 @@ def _parse_requirements(raw: list[str]) -> dict[str, int]:
 def execute_operations(conn: sqlite3.Connection, document: dict) -> list[dict]:
     inventory = InventoryService(conn)
     runs = RunService(conn)
+    deposits = DepositService(conn)
     results: list[dict] = []
     for op in document.get("operations", []):
-        results.append(_execute_one(conn, inventory, runs, op))
+        results.append(_execute_one(conn, inventory, runs, deposits, op))
     return results
 
 
@@ -185,6 +311,7 @@ def _execute_one(
     conn: sqlite3.Connection,
     inventory: InventoryService,
     runs: RunService,
+    deposits: DepositService,
     op: dict,
 ) -> dict:
     name = op.get("op")
@@ -221,6 +348,99 @@ def _execute_one(
         }
     if name == "conservation":
         return {"op": name, "result": inventory.conservation()}
+    if name == "credential":
+        return {"op": name, "result": deposits.credential(op["bottle_id"])}
+    if name == "explain_voucher":
+        return {
+            "op": name,
+            "result": deposits.explain_voucher(op["bottle_id"], op["day"]),
+        }
+    if name == "recount":
+        return {
+            "op": name,
+            "result": deposits.recount(op["bottle_id"], op["day"]),
+        }
+    if name == "open_clearance":
+        return {
+            "op": name,
+            "result": deposits.open_clearance(
+                op["bottle_id"], op["portions"], op["day"]
+            ),
+        }
+    if name == "sign_clearance":
+        return {
+            "op": name,
+            "result": deposits.sign_clearance(
+                op["request_id"],
+                op["counter_id"],
+                op["day"],
+                inventory_version=op.get("inventory_version"),
+                portions=op.get("portions"),
+            ),
+        }
+    if name == "get_clearance":
+        return {
+            "op": name,
+            "result": deposits.clearance_view(op["request_id"]),
+        }
+    if name == "apply_voucher":
+        return {
+            "op": name,
+            "result": deposits.apply_voucher(op["bottle_id"], op["day"]),
+        }
+    if name == "add_trip":
+        return {
+            "op": name,
+            "result": deposits.add_trip(
+                op["trip_id"],
+                op["departure_day"],
+                op["arrival_day"],
+                op["max_boxes"],
+            ),
+        }
+    if name == "add_box":
+        return {
+            "op": name,
+            "result": deposits.add_box_model(
+                op["model_id"], op["slots"], op["kinds"]
+            ),
+        }
+    if name == "add_offer":
+        return {
+            "op": name,
+            "result": deposits.add_trip_offer(
+                op["trip_id"], op["model_id"], op["price"]
+            ),
+        }
+    if name == "add_supplier_kind":
+        return {
+            "op": name,
+            "result": deposits.add_supplier_kind(op["supplier"], op["kind"]),
+        }
+    if name == "plan":
+        return {
+            "op": name,
+            "result": deposits.plan_shipment(
+                op["day"],
+                op.get("max_bottles", 18),
+                op.get("max_trips", 3),
+            ),
+        }
+    if name == "ship":
+        return {
+            "op": name,
+            "result": deposits.ship(
+                op["day"],
+                op.get("shipment_id"),
+                op.get("max_bottles", 18),
+                op.get("max_trips", 3),
+            ),
+        }
+    if name == "shipment":
+        return {
+            "op": name,
+            "result": deposits.shipment_view(op["shipment_id"]),
+        }
     raise ValueError(f"unknown operation {name!r}")
 
 
@@ -381,6 +601,93 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--inventory", required=True)
     p.add_argument("--operations", required=True)
     p.set_defaults(handler=cmd_run_ops)
+
+    # -- deposit / clearance / shipping -----------------------------------
+    p = sub.add_parser("credential", help="show a bottle's supply credential")
+    p.add_argument("--bottle", required=True)
+    p.set_defaults(handler=cmd_credential)
+
+    p = sub.add_parser("explain-voucher",
+                       help="explain why a bottle is (not) refund-eligible")
+    p.add_argument("--bottle", required=True)
+    p.add_argument("--day", required=True, type=int)
+    p.set_defaults(handler=cmd_explain_voucher)
+
+    p = sub.add_parser("recount", help="bump a bottle's stocktake version")
+    p.add_argument("--bottle", required=True)
+    p.add_argument("--day", required=True, type=int)
+    p.set_defaults(handler=cmd_recount)
+
+    p = sub.add_parser("open-clearance",
+                       help="open physical write-off of expired unallocated stock")
+    p.add_argument("--bottle", required=True)
+    p.add_argument("--portions", required=True, type=int)
+    p.add_argument("--day", required=True, type=int)
+    p.set_defaults(handler=cmd_open_clearance)
+
+    p = sub.add_parser("sign-clearance", help="record one counter's clearance sign-off")
+    p.add_argument("--request-id", required=True)
+    p.add_argument("--counter-id", required=True)
+    p.add_argument("--day", required=True, type=int)
+    p.add_argument("--inventory-version", type=int, default=None)
+    p.add_argument("--portions", type=int, default=None)
+    p.set_defaults(handler=cmd_sign_clearance)
+
+    p = sub.add_parser("get-clearance", help="show a clearance request")
+    p.add_argument("--request-id", required=True)
+    p.set_defaults(handler=cmd_get_clearance)
+
+    p = sub.add_parser("apply-voucher", help="issue the refund voucher for a bottle")
+    p.add_argument("--bottle", required=True)
+    p.add_argument("--day", required=True, type=int)
+    p.set_defaults(handler=cmd_apply_voucher)
+
+    p = sub.add_parser("add-trip", help="register a recycling-station trip")
+    p.add_argument("--trip-id", required=True)
+    p.add_argument("--departure-day", required=True, type=int)
+    p.add_argument("--arrival-day", required=True, type=int)
+    p.add_argument("--max-boxes", required=True, type=int)
+    p.set_defaults(handler=cmd_add_trip)
+
+    p = sub.add_parser("add-box", help="register a box model")
+    p.add_argument("--model-id", required=True)
+    p.add_argument("--slots", required=True, type=int)
+    p.add_argument("--kind", action="append", required=True,
+                   help="allowed bottle kind; repeat per kind")
+    p.set_defaults(handler=cmd_add_box)
+
+    p = sub.add_parser("add-offer", help="price a box model on a trip")
+    p.add_argument("--trip-id", required=True)
+    p.add_argument("--model-id", required=True)
+    p.add_argument("--price", required=True, type=int)
+    p.set_defaults(handler=cmd_add_offer)
+
+    p = sub.add_parser("add-supplier-kind",
+                       help="declare a supplier accepts a bottle kind")
+    p.add_argument("--supplier", required=True)
+    p.add_argument("--kind", required=True)
+    p.set_defaults(handler=cmd_add_supplier_kind)
+
+    p = sub.add_parser("plan", help="compute the optimal loading without shipping")
+    p.add_argument("--day", required=True, type=int)
+    p.add_argument("--max-bottles", type=int, default=18)
+    p.add_argument("--max-trips", type=int, default=3)
+    p.set_defaults(handler=cmd_plan)
+
+    p = sub.add_parser("ship", help="persist the optimal shipment")
+    p.add_argument("--day", required=True, type=int)
+    p.add_argument("--shipment-id", default=None)
+    p.add_argument("--max-bottles", type=int, default=18)
+    p.add_argument("--max-trips", type=int, default=3)
+    p.set_defaults(handler=cmd_ship)
+
+    p = sub.add_parser("get-shipment", help="show a shipment receipt")
+    p.add_argument("--shipment-id", required=True)
+    p.set_defaults(handler=cmd_get_shipment)
+
+    p = sub.add_parser("vouchers", help="list refund vouchers")
+    p.add_argument("--status", default=None, choices=["open", "shipped"])
+    p.set_defaults(handler=cmd_vouchers)
 
     return parser
 

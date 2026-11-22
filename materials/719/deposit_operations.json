@@ -1,0 +1,32 @@
+{
+  "operations": [
+    {"op": "add_supplier_kind", "supplier": "SUP", "kind": "R"},
+    {"op": "add_trip", "trip_id": "T12", "departure_day": 12,
+     "arrival_day": 12, "max_boxes": 3},
+    {"op": "add_box", "model_id": "TWO", "slots": 2, "kinds": ["R", "S"]},
+    {"op": "add_offer", "trip_id": "T12", "model_id": "TWO", "price": 5},
+
+    {"op": "create", "run_id": "use-A", "method_id": "USE1",
+     "method_revision": 1, "day": 10,
+     "selection": [{"bottle_id": "A", "portions": 1}]},
+    {"op": "start", "run_id": "use-A", "day": 10},
+
+    {"op": "explain_voucher", "bottle_id": "A", "day": 12},
+    {"op": "apply_voucher", "bottle_id": "A", "day": 12},
+    {"op": "plan", "day": 12},
+
+    {"op": "open_clearance", "bottle_id": "B", "portions": 1, "day": 12},
+    {"op": "sign_clearance", "request_id": "CLR:B", "counter_id": "count-1",
+     "day": 12},
+    {"op": "explain_voucher", "bottle_id": "B", "day": 12},
+    {"op": "sign_clearance", "request_id": "CLR:B", "counter_id": "count-2",
+     "day": 12},
+    {"op": "explain_voucher", "bottle_id": "B", "day": 12},
+    {"op": "apply_voucher", "bottle_id": "B", "day": 12},
+
+    {"op": "plan", "day": 12},
+    {"op": "ship", "day": 12, "shipment_id": "SHP12"},
+    {"op": "get_clearance", "request_id": "CLR:B"},
+    {"op": "conservation"}
+  ]
+}

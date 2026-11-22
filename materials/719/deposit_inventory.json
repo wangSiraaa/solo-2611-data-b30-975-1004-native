@@ -1,0 +1,80 @@
+{
+  "initial_day": 10,
+  "kinds": [
+    {
+      "kind": "R",
+      "open_lifetime_days": 2
+    },
+    {
+      "kind": "S",
+      "open_lifetime_days": 2
+    }
+  ],
+  "bottles": [
+    {
+      "bottle_id": "A",
+      "kind": "R",
+      "total_portions": 1,
+      "intake_day": 10,
+      "printed_expiry_day": 20,
+      "opened_day": null,
+      "credential": {
+        "supplier": "SUP",
+        "package_model": "PK-A",
+        "deposit": 4,
+        "latest_return_day": 12
+      }
+    },
+    {
+      "bottle_id": "B",
+      "kind": "R",
+      "total_portions": 1,
+      "intake_day": 10,
+      "printed_expiry_day": 12,
+      "opened_day": null,
+      "credential": {
+        "supplier": "SUP",
+        "package_model": "PK-A",
+        "deposit": 4,
+        "latest_return_day": 12
+      }
+    },
+    {
+      "bottle_id": "C",
+      "kind": "S",
+      "total_portions": 1,
+      "intake_day": 10,
+      "printed_expiry_day": 20,
+      "opened_day": null,
+      "credential": {
+        "supplier": "SUP",
+        "package_model": "PK-S",
+        "deposit": 4,
+        "latest_return_day": 12
+      }
+    },
+    {
+      "bottle_id": "D",
+      "kind": "R",
+      "total_portions": 1,
+      "intake_day": 10,
+      "printed_expiry_day": 20,
+      "opened_day": null,
+      "credential": {
+        "supplier": "SUP",
+        "package_model": "PK-A",
+        "deposit": 4,
+        "latest_return_day": 12
+      }
+    }
+  ],
+  "methods": [
+    {
+      "method_id": "USE1",
+      "revision": 1,
+      "requirements": {
+        "R": 1
+      }
+    }
+  ]
+}

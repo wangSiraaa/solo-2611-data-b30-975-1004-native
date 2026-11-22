@@ -463,6 +463,7 @@ class ConservationTests(StoreTestCase):
             "unallocated": 4,
             "reserved": 0,
             "consumed": 0,
+            "cleared": 0,
         })
         # run the U scenario: consume 3 by day 12; by day 14 one portion left
         self.reserve("r1", 10, ("U", 1))

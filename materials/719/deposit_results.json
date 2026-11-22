@@ -1,0 +1,111 @@
+{
+  "branches": {
+    "different_versions": {
+      "signoffs": [
+        {
+          "counter_id": "count-1",
+          "day": 12,
+          "inventory_version": 0,
+          "portions": 1
+        },
+        {
+          "counter_id": "count-2",
+          "day": 12,
+          "inventory_version": 1,
+          "portions": 1
+        }
+      ],
+      "status": "pending",
+      "voucher": "blocked"
+    },
+    "late_trip": {
+      "bottle_count": 0,
+      "box_cost": 0,
+      "boxes": [],
+      "day": 12,
+      "deposit_total": 0,
+      "profit": 0,
+      "trips_used": []
+    },
+    "old_holder_at_expiry": {
+      "clearance": "blocked",
+      "reserved": 1,
+      "status": "expired",
+      "unallocated": 0,
+      "voucher": "blocked"
+    }
+  },
+  "conservation": [
+    {
+      "bottle_id": "A",
+      "cleared": 0,
+      "consumed": 1,
+      "reserved": 0,
+      "total_portions": 1,
+      "unallocated": 0
+    },
+    {
+      "bottle_id": "B",
+      "cleared": 1,
+      "consumed": 0,
+      "reserved": 0,
+      "total_portions": 1,
+      "unallocated": 0
+    },
+    {
+      "bottle_id": "C",
+      "cleared": 0,
+      "consumed": 0,
+      "reserved": 0,
+      "total_portions": 1,
+      "unallocated": 1
+    },
+    {
+      "bottle_id": "D",
+      "cleared": 0,
+      "consumed": 0,
+      "reserved": 0,
+      "total_portions": 1,
+      "unallocated": 1
+    }
+  ],
+  "conservation_ok": true,
+  "final_shipment": {
+    "bottle_count": 2,
+    "box_cost": 5,
+    "boxes": [
+      {
+        "bottles": [
+          "A",
+          "B"
+        ],
+        "box_id": "SHP12#B0",
+        "deposit_total": 8,
+        "model_id": "TWO",
+        "price": 5,
+        "supplier": "SUP",
+        "trip_id": "T12",
+        "voucher_ids": [
+          "VOUCHER:A",
+          "VOUCHER:B"
+        ]
+      }
+    ],
+    "day": 12,
+    "deposit_total": 8,
+    "profit": 3,
+    "shipment_id": "SHP12",
+    "trips_used": [
+      "T12"
+    ]
+  },
+  "initial_plan_one_voucher": {
+    "bottle_count": 0,
+    "box_cost": 0,
+    "boxes": [],
+    "day": 12,
+    "deposit_total": 0,
+    "profit": 0,
+    "trips_used": []
+  }
+}

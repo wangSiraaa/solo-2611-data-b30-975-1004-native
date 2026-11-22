@@ -55,6 +55,20 @@ class InventoryService:
                         doc["opened_day"],
                     ),
                 )
+                credential = doc.get("credential")
+                if credential is not None:
+                    self.conn.execute(
+                        "INSERT INTO bottle_credentials(bottle_id, supplier, "
+                        "package_model, deposit, latest_return_day) "
+                        "VALUES(?, ?, ?, ?, ?)",
+                        (
+                            doc["bottle_id"],
+                            credential["supplier"],
+                            credential["package_model"],
+                            credential["deposit"],
+                            credential["latest_return_day"],
+                        ),
+                    )
             for method_id, revisions in methods.items():
                 for revision, requirements in revisions.items():
                     self.conn.execute(
@@ -456,6 +470,7 @@ def _validate_bottles(
                     f"bottle {bottle_id}: opened_day {opened} must be before "
                     f"printed_expiry_day {printed}"
                 )
+        credential = _validate_credential(item.get("credential"), bottle_id)
         out.append(
             {
                 "bottle_id": bottle_id,
@@ -464,9 +479,33 @@ def _validate_bottles(
                 "intake_day": intake,
                 "printed_expiry_day": printed,
                 "opened_day": opened,
+                "credential": credential,
             }
         )
     return out
+
+
+def _validate_credential(raw: object, bottle_id: str) -> dict | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise ValidationError(
+            f"bottle {bottle_id}: credential must be an object or null"
+        )
+    supplier = require_text(raw.get("supplier"), "credential supplier")
+    package_model = require_text(
+        raw.get("package_model"), "credential package_model"
+    )
+    deposit = require_int(raw.get("deposit"), "credential deposit", minimum=0)
+    latest = require_day(
+        raw.get("latest_return_day"), "credential latest_return_day"
+    )
+    return {
+        "supplier": supplier,
+        "package_model": package_model,
+        "deposit": deposit,
+        "latest_return_day": latest,
+    }
 
 
 def _validate_methods(

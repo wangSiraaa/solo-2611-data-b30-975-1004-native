@@ -6,8 +6,9 @@ Python 3.11 + SQLite 的试剂库存服务与运行库。只使用 `materials/71
 ## 运行
 
 ```bash
-python3 -m unittest discover -s tests -v     # 46 个测试
+python3 -m unittest discover -s tests -v     # 77 个测试
 python3 demo_719.py                          # 跑 719 操作文件并打印可手算守恒
+python3 demo_deposit.py                      # 容器退押 + 清退 + 装车优化并落盘结果
 ```
 
 CLI 独立入口（`--db` 指向 SQLite 文件）：
@@ -34,6 +35,23 @@ python3 -m reagent --db store.db release --run-id r1 --day 12 --reason cancel
 python3 -m reagent --db store.db get-run --run-id r1
 python3 -m reagent --db store.db run-ops --inventory materials/719/inventory.json \
                                           --operations materials/719/operations.json
+
+# 容器退押 / 清退 / 装车（虚构账务数据）
+python3 -m reagent --db store.db credential      --bottle A
+python3 -m reagent --db store.db explain-voucher --bottle B --day 12
+python3 -m reagent --db store.db recount         --bottle B --day 12
+python3 -m reagent --db store.db open-clearance  --bottle B --portions 1 --day 12
+python3 -m reagent --db store.db sign-clearance  --request-id CLR:B \
+                                                 --counter-id count-1 --day 12
+python3 -m reagent --db store.db apply-voucher   --bottle A --day 12
+python3 -m reagent --db store.db add-trip        --trip-id T12 --departure-day 12 \
+                                                 --arrival-day 12 --max-boxes 3
+python3 -m reagent --db store.db add-box         --model-id TWO --slots 2 --kind R --kind S
+python3 -m reagent --db store.db add-offer       --trip-id T12 --model-id TWO --price 5
+python3 -m reagent --db store.db add-supplier-kind --supplier SUP --kind R
+python3 -m reagent --db store.db plan            --day 12
+python3 -m reagent --db store.db ship            --day 12 --shipment-id SHP12
+python3 -m reagent --db store.db vouchers
 ```
 
 ## 关键规则
@@ -105,6 +123,52 @@ python3 -m reagent --db store.db run-ops --inventory materials/719/inventory.jso
 | 重复 start reserve-U | 返回原终态，不再扣 1 |
 
 守恒终态：`U 4=1+0+3`、`P 2=2+0+0`、`LAST 1=0+1+0`。
+
+## 容器退押与装车（`reagent/deposits.py`）
+
+包装号、押金、规格与运费均为虚构账务数据。每只瓶有一份随实物固定的
+supply credential（`bottle_credentials`：供应商、包装型号、整数押金、最迟交还日），
+写入后不可改。
+
+**可退凭单（voucher）与份数无关**
+
+- 一份凭单对应一只实物瓶，不是份数；`unallocated=0` 只可能来自真实消耗或
+  两人签字的实物清退。过期让份数不可领，但份数仍留在瓶里，不能据此领凭单。
+- 可申请条件：无 `active` 预留 + 全部份数已实际消耗或已清退 + 当日不晚于
+  最迟交还日。`explain-voucher` 独立列出每个阻断原因，库房可逐瓶查询。
+- 同一瓶最多一张尚存凭单（部分唯一索引）；已交运的凭单被触发器锁定为不可改。
+- 份数因过期不可领 ≠ 交出了空瓶：过期未占份必须先由两名不同盘点员对
+  **同一盘点版本**和**准确的剩余未占量**签字清退（`clearance_signoffs`
+  签名版本/份数须完全一致），才可申请；有人仍预留时禁止清退。
+
+**清退是第四种去向**（`bottle_allocation`）
+
+- `total = unallocated + reserved + consumed + cleared`；`cleared` 单列，
+  绝不计入 `consumed`。数据库触发器同时约束 `reserved+consumed+cleared ≤ total`。
+
+**装车最优**
+
+- 回收站有若干趟车，各有出发日、到达日、最大箱数；每趟可买若干箱型，各有
+  价格、格数、允许的瓶型。一箱只寄一家供应商、只属于一趟车；供应商可只收
+  某几种瓶型（`supplier_kinds`），同箱可在箱型允许时混收。
+- 过交还日不付押金：只有**到达日 ≤ 最迟交还日**的凭单才计押金。
+- 目标是 `实退押金 − 箱费` 最大，允许一瓶也不寄；同利润优先多退瓶。
+- 精确搜索 + 后缀上界剪枝 + 同状态记忆化（`_optimize`），并与暴力枚举
+  交叉验证。交运后凭单锁定，另一张单不能再装同瓶（`shipped_items` 唯一约束）。
+
+### 719 退押场景（`demo_deposit.py`，结果落盘 `materials/719/deposit_results.json`）
+
+A、B 同型，各押 4、交还日 12。A 10 日经普通运行耗尽；B 剩 1 份因过期不可领，
+只有一人签过清退。车 12 日到，两格箱费 5：
+
+| 步骤 | 结果 |
+| --- | --- |
+| 仅 A 可退时 `plan` 12 | 一瓶 4 − 箱 5 < 0，最优**不寄** |
+| 第二盘点员在同版核准 B 后 `plan` 12 | 两瓶 8 − 5，净得 **3**，装一箱 T12/TWO |
+| 同样两张凭单，仅车改 13 日到 | 到达晚于交还日 12，**仍不寄** |
+| 两人签不同版本 | 请求停在 `pending`，凭单被阻断 |
+| 过期前已被旧 holder 预留、过期时仍占用 | 有 `active` 预留，清退与凭单均**阻断** |
+| 守恒终态 | A `1=0+0+1+0`、B `1=0+0+0+1`，C/D 各自 `1=1+0+0+0` |
 
 ## 范围
 

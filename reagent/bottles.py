@@ -12,10 +12,12 @@ Allocation arithmetic is derived, never stored:
 
 * ``reserved = SUM(portions) of active reservations``
 * ``consumed = SUM(portions) of consumed reservations``
-* ``unallocated = total - reserved - consumed``
+* ``cleared = SUM(portions) of cleared clearance requests``
+* ``unallocated = total - reserved - consumed - cleared``
 * ``leadable_today = unallocated`` if the bottle is valid today, else ``0``
 
 Expired stock keeps its ``unallocated`` count; it merely stops being leadable.
+Physical write-off (``cleared``) is a separate destination, never ``consumed``.
 """
 
 from __future__ import annotations
@@ -94,6 +96,7 @@ class BottleAllocation:
     total_portions: int
     reserved: int
     consumed: int
+    cleared: int
     unallocated: int
     valid_today: bool
     leadable_today: int
@@ -109,6 +112,7 @@ class BottleAllocation:
             "total_portions": self.total_portions,
             "reserved": self.reserved,
             "consumed": self.consumed,
+            "cleared": self.cleared,
             "unallocated": self.unallocated,
             "valid_today": self.valid_today,
             "leadable_today": self.leadable_today,
@@ -136,16 +140,27 @@ def sum_reservations(
     return int(row["n"])
 
 
+def sum_cleared(conn: sqlite3.Connection, bottle_id: str) -> int:
+    row = conn.execute(
+        "SELECT COALESCE(SUM(portions), 0) AS n FROM clearance_requests "
+        "WHERE bottle_id = ? AND status = 'cleared'",
+        (bottle_id,),
+    ).fetchone()
+    return int(row["n"])
+
+
 def allocation(
     conn: sqlite3.Connection, bottle: BottleRow, day: int
 ) -> BottleAllocation:
     reserved = sum_reservations(conn, bottle.bottle_id, "active")
     consumed = sum_reservations(conn, bottle.bottle_id, "consumed")
-    unallocated = bottle.total_portions - reserved - consumed
+    cleared = sum_cleared(conn, bottle.bottle_id)
+    unallocated = bottle.total_portions - reserved - consumed - cleared
     if unallocated < 0:
         raise InventoryInvariantError(
             f"bottle {bottle.bottle_id}: reserved {reserved} + consumed "
-            f"{consumed} exceed total {bottle.total_portions}"
+            f"{consumed} + cleared {cleared} exceed total "
+            f"{bottle.total_portions}"
         )
     valid = bottle.usable_on(day)
     status = bottle.validity(day)
@@ -156,6 +171,7 @@ def allocation(
         total_portions=bottle.total_portions,
         reserved=reserved,
         consumed=consumed,
+        cleared=cleared,
         unallocated=unallocated,
         valid_today=valid,
         leadable_today=unallocated if valid else 0,
@@ -169,23 +185,24 @@ def check_conservation(conn: sqlite3.Connection) -> list[dict]:
     """Cross-check derived python arithmetic against the SQL view.
 
     Raises if either source violates ``total == unallocated + reserved +
-    consumed`` or if the two disagree.
+    consumed + cleared`` or if the two disagree.
     """
     rows = conn.execute(
-        "SELECT bottle_id, kind, total_portions, reserved, consumed, unallocated "
-        "FROM bottle_allocation ORDER BY bottle_id"
+        "SELECT bottle_id, kind, total_portions, reserved, consumed, cleared, "
+        "unallocated FROM bottle_allocation ORDER BY bottle_id"
     ).fetchall()
     out: list[dict] = []
     for row in rows:
         reserved = int(row["reserved"])
         consumed = int(row["consumed"])
+        cleared = int(row["cleared"])
         unallocated = int(row["unallocated"])
         total = int(row["total_portions"])
-        if unallocated < 0 or reserved < 0 or consumed < 0:
+        if unallocated < 0 or reserved < 0 or consumed < 0 or cleared < 0:
             raise InventoryInvariantError(
                 f"bottle {row['bottle_id']}: total {total} != "
                 f"unallocated {unallocated} + reserved {reserved} + "
-                f"consumed {consumed}"
+                f"consumed {consumed} + cleared {cleared}"
             )
         out.append(
             {
@@ -194,6 +211,7 @@ def check_conservation(conn: sqlite3.Connection) -> list[dict]:
                 "unallocated": unallocated,
                 "reserved": reserved,
                 "consumed": consumed,
+                "cleared": cleared,
             }
         )
     return out
