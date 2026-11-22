@@ -1,0 +1,80 @@
+{
+  "batch_id": "b-1",
+  "status": "committed",
+  "items": [
+    {
+      "index": 0,
+      "template_id": "mul",
+      "revision": 1,
+      "status": "ok",
+      "plan": {
+        "format": "sql-param-plan/v1",
+        "template_id": "mul",
+        "revision": 1,
+        "source": "UPDATE bins SET qty = qty * :k WHERE id = :id",
+        "sql": "UPDATE bins SET qty = qty * ? WHERE id = ?",
+        "parameters": [
+          {
+            "name": "k",
+            "start": 28,
+            "end": 30
+          },
+          {
+            "name": "id",
+            "start": 42,
+            "end": 45
+          }
+        ]
+      },
+      "distinct_names": [
+        "k",
+        "id"
+      ],
+      "ordered_values": [
+        2,
+        1
+      ],
+      "result": {
+        "kind": "update",
+        "rowcount": 1
+      }
+    },
+    {
+      "index": 1,
+      "template_id": "mul",
+      "revision": 1,
+      "status": "ok",
+      "plan": {
+        "format": "sql-param-plan/v1",
+        "template_id": "mul",
+        "revision": 1,
+        "source": "UPDATE bins SET qty = qty * :k WHERE id = :id",
+        "sql": "UPDATE bins SET qty = qty * ? WHERE id = ?",
+        "parameters": [
+          {
+            "name": "k",
+            "start": 28,
+            "end": 30
+          },
+          {
+            "name": "id",
+            "start": 42,
+            "end": 45
+          }
+        ]
+      },
+      "distinct_names": [
+        "k",
+        "id"
+      ],
+      "ordered_values": [
+        2,
+        2
+      ],
+      "result": {
+        "kind": "update",
+        "rowcount": 1
+      }
+    }
+  ]
+}

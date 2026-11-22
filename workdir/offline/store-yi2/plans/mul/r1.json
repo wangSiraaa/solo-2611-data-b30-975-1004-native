@@ -1,0 +1,19 @@
+{
+  "format": "sql-param-plan/v1",
+  "template_id": "mul",
+  "revision": 1,
+  "source": "UPDATE bins SET qty = qty * :k WHERE id = :id",
+  "sql": "UPDATE bins SET qty = qty * ? WHERE id = ?",
+  "parameters": [
+    {
+      "name": "k",
+      "start": 28,
+      "end": 30
+    },
+    {
+      "name": "id",
+      "start": 42,
+      "end": 45
+    }
+  ]
+}

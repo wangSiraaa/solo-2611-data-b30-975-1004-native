@@ -1,0 +1,15 @@
+{
+  "format": "sql-param-ledger/v1",
+  "signed": [
+    {
+      "order_id": "flex-0",
+      "application_id": null,
+      "quantity": 5,
+      "bins": [
+        "X",
+        "Y"
+      ],
+      "value": 0
+    }
+  ]
+}

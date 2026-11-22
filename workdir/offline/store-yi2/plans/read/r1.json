@@ -1,0 +1,14 @@
+{
+  "format": "sql-param-plan/v1",
+  "template_id": "read",
+  "revision": 1,
+  "source": "SELECT qty FROM bins WHERE id = :id ORDER BY id",
+  "sql": "SELECT qty FROM bins WHERE id = ? ORDER BY id",
+  "parameters": [
+    {
+      "name": "id",
+      "start": 32,
+      "end": 35
+    }
+  ]
+}

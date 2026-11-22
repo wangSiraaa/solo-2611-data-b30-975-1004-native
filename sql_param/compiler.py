@@ -62,19 +62,15 @@ def _is_name_char(ch: str) -> bool:
     return bool(_NAME_CHAR.fullmatch(ch))
 
 
-def compile_template(source: str, template_id: str, revision: int) -> CompiledTemplate:
-    """把原文模板编译为可执行 SQL（? 占位）加按出现顺序的参数表。
+def _scan(source: str, *, allow_qmark: bool) -> tuple[str, str, tuple[Parameter, ...]]:
+    """字符级状态机扫描，返回 (可执行文本, 正常区域文本, 参数表)。
 
-    位置全部基于 ``source`` 的 Python 字符索引（Unicode 代码点），
-    与 UTF-8 字节数无关；原文不做归一化。
+    allow_qmark=False 用于编译原文：正常区域的 ``?`` 与裸 ``:`` 一律拒绝，
+    完整的 ``:name`` 记为参数并替换为 ``?``。
+    allow_qmark=True 用于已编译 SQL 的视图提取：接受 ``?``，``:`` 视为普通字符。
+    两种模式都拒绝正常区域的分号与未结束的引号/块注释；引号、注释逐字保留在
+    可执行文本里，在正常区域文本里以空白替代。
     """
-    if not isinstance(source, str):
-        raise TemplateCompileError("template source must be a string")
-    if not isinstance(template_id, str) or not template_id:
-        raise TemplateCompileError("template_id must be a non-empty string")
-    if not isinstance(revision, int) or isinstance(revision, bool) or revision < 1:
-        raise TemplateCompileError("revision must be a positive integer")
-
     out: list[str] = []                 # 可执行 SQL 片段（引号/注释原文逐字进入）
     normal_parts: list[str] = []        # 仅正常 SQL 区域的文本，参数记为 ?
     parameters: list[Parameter] = []
@@ -164,10 +160,15 @@ def compile_template(source: str, template_id: str, revision: int) -> CompiledTe
                 f"semicolon is not allowed in normal SQL at character {i}"
             )
         if ch == "?":
-            raise TemplateCompileError(
-                f"question-mark parameter style is not supported at character {i}"
-            )
-        if ch == ":":
+            if not allow_qmark:
+                raise TemplateCompileError(
+                    f"question-mark parameter style is not supported at character {i}"
+                )
+            out.append(ch)
+            normal_parts.append(ch)
+            i += 1
+            continue
+        if ch == ":" and not allow_qmark:
             if i + 1 < n and _is_name_head(source[i + 1]):
                 j = i + 2
                 while j < n and _is_name_char(source[j]):
@@ -194,8 +195,25 @@ def compile_template(source: str, template_id: str, revision: int) -> CompiledTe
         raise TemplateCompileError("unterminated block comment")
     # LINE_COMMENT 在 EOF 终止是合法的。
 
-    sql = "".join(out)
-    normal_text = "".join(normal_parts).strip()
+    return "".join(out), "".join(normal_parts), tuple(parameters)
+
+
+def compile_template(source: str, template_id: str, revision: int) -> CompiledTemplate:
+    """把原文模板编译为可执行 SQL（? 占位）加按出现顺序的参数表。
+
+    位置全部基于 ``source`` 的 Python 字符索引（Unicode 代码点），
+    与 UTF-8 字节数无关；原文不做归一化。
+    """
+    if not isinstance(source, str):
+        raise TemplateCompileError("template source must be a string")
+    if not isinstance(template_id, str) or not template_id:
+        raise TemplateCompileError("template_id must be a non-empty string")
+    if not isinstance(revision, int) or isinstance(revision, bool) or revision < 1:
+        raise TemplateCompileError("revision must be a positive integer")
+
+    sql, normal_text, parameters = _scan(source, allow_qmark=False)
+
+    normal_text = normal_text.strip()
     if not normal_text:
         raise TemplateCompileError("empty SQL template")
     match = _LEADING_KEYWORD.match(normal_text)
@@ -211,10 +229,22 @@ def compile_template(source: str, template_id: str, revision: int) -> CompiledTe
         revision=revision,
         source=source,
         sql=sql,
-        parameters=tuple(parameters),
+        parameters=parameters,
         statement=statement,
         has_order_by=has_order_by,
     )
+
+
+def normal_view(text: str) -> str:
+    """提取已编译 SQL 的正常区域文本：字符串/双引号标识符/注释区域以空白替代。
+
+    供合账方做模板限制校验（表名引用、函数调用、ORDER BY 全序）；
+    只读文本、不重新编译、不连接数据库。
+    """
+    if not isinstance(text, str):
+        raise TemplateCompileError("sql text must be a string")
+    _, normal, _ = _scan(text, allow_qmark=True)
+    return normal
 
 
 def make_plan(compiled: CompiledTemplate) -> dict:

@@ -1,0 +1,15 @@
+{
+  "format": "sql-param-ledger/v1",
+  "signed": [
+    {
+      "order_id": "Q",
+      "application_id": "Q",
+      "quantity": 16,
+      "bins": [
+        "X",
+        "Y"
+      ],
+      "value": 6
+    }
+  ]
+}

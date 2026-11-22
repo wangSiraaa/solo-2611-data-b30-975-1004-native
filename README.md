@@ -7,15 +7,22 @@
 ```
 sql_param/
   compiler.py    字符级状态机模板编译器（单引号/双引号/行注释/块注释/:name）
+                 另提供 normal_view：提取已编译 SQL 的正常区域文本供合账校验
   bindings.py    值解码（null/int64/str/bytes/$bytes）与按出现顺序绑定
   plan_store.py  sql-param-plan/v1 计划发布、重放校验、持久化与公开格式校验
   executor.py    固定修订 → 整批预检 → 单事务依次执行 → 回执落盘
+  slips.py       sql-param-slip/v1 离线柜台对账条出具与独立校验
+  reconcile.py   回单室合账：交错顺序搜索、可行终局枚举、独立复核、整批隔离
+  credit.py      授信席：最大价值签单、逐终局配给、供量缺口见证、账簿持久化
   errors.py      统一异常类型
 cli/
-  publish_plan.py   独立 CLI：发布单个模板为计划文件
-  run_batch.py      独立 CLI：读取批次 JSON 执行并输出回执路径
+  publish_plan.py     独立 CLI：发布单个模板为计划文件
+  run_batch.py        独立 CLI：读取批次 JSON 执行并输出回执路径
+  reconcile_round.py  独立 CLI：从快照核对一轮对账条并输出合账报告
+  credit_round.py     独立 CLI：评估一轮新申请，可选正式签发最佳集合
 demo_run.py        读取 materials/717 的完整端到端驱动（含与材料 plan_reader.py 互操作）
-tests/             39 个 unittest 用例
+demo_offline.py    离线回单合账 + 授信签单端到端演示（题目 X/Y 货位场景）
+tests/             71 个 unittest 用例
 ```
 
 ## 词法规则（为什么不能用正则替换）
@@ -116,9 +123,73 @@ python -m cli.run_batch  ./workdir/store ./workdir/notes.db ./workdir/receipts \
         b-ok batch.json
 ```
 
+## 离线回单合账（sql-param-slip/v1 + sql-param-reconcile/v1）
+
+仓库保存一张起始 SQLite 快照；多台柜台各自离线执行批次（各自的快照副本），只保留
+本机批次先后（对账条 `sequence`），柜台之间没有统一时钟。
+
+**柜台出具对账条**：`export_slip(receipt, counter_id=..., sequence=..., visibility=...)`
+从 committed 回执出具对账条，每条固定一个不可拆批次。`visibility` 按 item 下标声明
+公开面：SELECT 项 `{"columns": [列位...]}`，写操作项 `{"rowcount": True}`；未声明的
+结果一律保密。导出方逐项核下标、列位与实际类型；零行、一行 NULL、两条相同记录是
+三种不同事实，投影逐格复制、绝不折叠。回单室一侧用 `validate_slip` 独立复核同一合同。
+
+**回单室合账**：`reconcile_round(snapshot, table=..., counters=[...])` 把快照复制进
+内存库，以 SAVEPOINT 深搜全部交错顺序（按各柜台进度 + 整表状态去重），真实重放每个
+批次；只有交易成功且所有公开投影与盖章 rowcount 逐项吻合，这批回单才算被解释。
+模板限制逐项强制：单表（引用其它表即拒）、该表有且仅有一个 INTEGER PRIMARY KEY、
+只允许参数化 SELECT/INSERT/UPDATE、正常区域不得出现函数调用（VALUES 与 INSERT 列名
+括号除外）、带公开投影的 SELECT 必须显式 ORDER BY 且排序键包含主键。每轮至多 20 个
+批次。报告（sql-param-reconcile/v1）列出全部可行终局，各自带一条见证顺序与逐项核对
+证据；接收方可用 `verify_order` 从快照独立重放复核一条顺序，或重跑同一确定性过程
+复核无解。没有任何交错顺序能解释全部批次时，整批隔离（quarantined），一个批次也
+不入账。
+
+## 授信签单（sql-param-ledger/v1）
+
+授信席持有已签承诺账簿与一组可行终局（`capacities_from_report` 从合账报告提取各
+货位可用量；回单被隔离时没有可信终局，拒绝建席）。每张申请规定数量、可提货位
+（可跨所列货位拆领）与整单价值。签后必须保证：在每一个可行终局中，全体已签与
+新接订单都存在同时兑现的分配（逐终局最大流判定）；实际拣货在终局确定后选。
+
+- `evaluate(apps)`：价值最大的可签新单集合（同分取申请号字典序最小者）；各自单验
+  成功不等于能同时签。
+- `sign(apps)`：正式签发最佳集合（或显式给定的可行子集）并落账；同一申请不能签
+  两次；下一位授信员重开同一账簿即算入仍生效的旧承诺。
+- `allocate(terminal_id)`：指定终局的逐单逐货位配给。
+- `gap_witness(app)`：申请不能加入时的供量缺口见证（某终局下一组订单的需求量
+  超过其可用货位总供给的 Hall 型见证）。
+
+每轮至多 12 张申请、6 个货位。
+
+```python
+from sql_param import (export_slip, reconcile_round, verify_order,
+                       CreditDesk, capacities_from_report)
+
+slip = export_slip(receipt, counter_id="jia", sequence=1,
+                   visibility={0: {"rowcount": True}, 2: {"columns": [0]}})
+report = reconcile_round("snapshot.db", table="bins",
+                         counters=[{"counter_id": "jia", "slips": [slip_a]},
+                                   {"counter_id": "yi", "slips": [slip_b]}])
+terminals = capacities_from_report(report, bins={"X": 1, "Y": 2},
+                                   quantity_column="qty")
+desk = CreditDesk("ledger.json", terminals)
+desk.evaluate(applications)   # 最佳可签集合
+desk.sign(applications)       # 正式签发并落账
+desk.allocate("t1")           # 指定终局的配给
+```
+
+CLI：
+
+```bash
+python -m cli.reconcile_round snapshot.db bins round.json
+python -m cli.credit_round ledger.json report.json bins.json applications.json --sign
+```
+
 ## 验证
 
 ```bash
-python3 -m unittest discover -s tests -v   # 39 个用例
+python3 -m unittest discover -s tests -v   # 71 个用例
 python3 demo_run.py                         # 材料全流程 + plan_reader 互操作
+python3 demo_offline.py                     # 离线合账 + 授信签单全流程
 ```
