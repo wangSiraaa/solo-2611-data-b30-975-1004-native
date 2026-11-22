@@ -10,6 +10,8 @@ import threading
 
 from .errors import ReagentError
 from .inventory import InventoryService
+from .billing import BillingService
+from .clearing import Route, settle
 from .runs import RunService
 from .schema import connect, initialize
 
@@ -147,6 +149,124 @@ def cmd_run_ops(args: argparse.Namespace) -> dict:
     results = execute_operations(conn, _load_json(args.operations))
     conn.close()
     return {"results": results}
+
+
+# ---------------------------------------------------------------------------
+# billing command handlers
+# ---------------------------------------------------------------------------
+def cmd_period_open(args: argparse.Namespace) -> dict:
+    conn = connect(args.db)
+    result = BillingService(conn).open_period(args.period_id, args.day)
+    conn.close()
+    return result
+
+
+def cmd_price(args: argparse.Namespace) -> dict:
+    conn = connect(args.db)
+    result = BillingService(conn).add_price(
+        args.period_id, args.bottle, args.price, args.on_day
+    )
+    conn.close()
+    return result
+
+
+def cmd_voucher(args: argparse.Namespace) -> dict:
+    conn = connect(args.db)
+    document = _load_json(args.document)
+    result = BillingService(conn).issue_voucher(document)
+    conn.close()
+    return result
+
+
+def cmd_vouchers(args: argparse.Namespace) -> dict:
+    conn = connect(args.db)
+    result = BillingService(conn).voucher_status()
+    conn.close()
+    return {"vouchers": result}
+
+
+def cmd_credentials(args: argparse.Namespace) -> dict:
+    conn = connect(args.db)
+    claims = BillingService(conn).load_credentials(args.period_id)
+    conn.close()
+    return {
+        "credentials": [
+            {
+                "reservation_id": c.reservation_id,
+                "seq": c.seq,
+                "counter_id": c.counter_id,
+                "bottle_id": c.bottle_id,
+                "settle_day": c.settle_day,
+                "list_price": c.list_price,
+            }
+            for c in claims
+        ]
+    }
+
+
+def cmd_bill(args: argparse.Namespace) -> dict:
+    conn = connect(args.db)
+    result = BillingService(conn).issue_bill(args.period_id, args.day)
+    conn.close()
+    return result
+
+
+def cmd_bill_get(args: argparse.Namespace) -> dict:
+    conn = connect(args.db)
+    result = BillingService(conn).get_bill(args.period_id)
+    conn.close()
+    return result
+
+
+def cmd_bill_close(args: argparse.Namespace) -> dict:
+    conn = connect(args.db)
+    result = BillingService(conn).close_period(args.period_id)
+    conn.close()
+    return result
+
+
+def cmd_period_reopen(args: argparse.Namespace) -> dict:
+    conn = connect(args.db)
+    result = BillingService(conn).reopen_period(args.period_id)
+    conn.close()
+    return result
+
+
+def cmd_settlement(args: argparse.Namespace) -> dict:
+    conn = connect(args.db)
+    result = BillingService(conn).settlement(args.period_id)
+    conn.close()
+    return result
+
+
+def cmd_clear(args: argparse.Namespace) -> dict:
+    document = _load_json(args.document)
+    routes = [
+        Route(
+            route_id=item["route_id"],
+            source=item["source"],
+            target=item["target"],
+            capacity=int(item["capacity"]),
+            activation_fee=int(item["activation_fee"]),
+        )
+        for item in document.get("routes", [])
+    ]
+    result = settle(document["balances"], routes)
+    return {
+        "feasible": result.feasible,
+        "total_activation_fee": result.total_activation_fee,
+        "reason": result.reason,
+        "instructions": [
+            {
+                "route_id": ins.route_id,
+                "source": ins.source,
+                "target": ins.target,
+                "amount": ins.amount,
+                "activation_fee": ins.activation_fee,
+            }
+            for ins in result.instructions
+        ],
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -381,6 +501,57 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--inventory", required=True)
     p.add_argument("--operations", required=True)
     p.set_defaults(handler=cmd_run_ops)
+
+    # -- billing -------------------------------------------------------------
+    p = sub.add_parser("period-open", help="open a billing period")
+    p.add_argument("--period-id", required=True)
+    p.add_argument("--day", required=True, type=int)
+    p.set_defaults(handler=cmd_period_open)
+
+    p = sub.add_parser("price", help="register a supplier list price")
+    p.add_argument("--period-id", required=True)
+    p.add_argument("--bottle", required=True)
+    p.add_argument("--price", required=True, type=int)
+    p.add_argument("--on-day", type=int, default=None,
+                   help="specific day the price applies to; default = all days")
+    p.set_defaults(handler=cmd_price)
+
+    p = sub.add_parser("voucher", help="issue a named point voucher")
+    p.add_argument("--document", required=True, help="JSON document path")
+    p.set_defaults(handler=cmd_voucher)
+
+    p = sub.add_parser("vouchers", help="list vouchers with lock state")
+    p.set_defaults(handler=cmd_vouchers)
+
+    p = sub.add_parser("credentials", help="list true-usage credentials of a period")
+    p.add_argument("--period-id", required=True)
+    p.set_defaults(handler=cmd_credentials)
+
+    p = sub.add_parser("bill", help="issue (or replay) the bill for a period")
+    p.add_argument("--period-id", required=True)
+    p.add_argument("--day", required=True, type=int)
+    p.set_defaults(handler=cmd_bill)
+
+    p = sub.add_parser("bill-get", help="read the active bill of a period")
+    p.add_argument("--period-id", required=True)
+    p.set_defaults(handler=cmd_bill_get)
+
+    p = sub.add_parser("bill-close", help="freeze a period's write-offs")
+    p.add_argument("--period-id", required=True)
+    p.set_defaults(handler=cmd_bill_close)
+
+    p = sub.add_parser("period-reopen", help="supersede an open period's bill")
+    p.add_argument("--period-id", required=True)
+    p.set_defaults(handler=cmd_period_reopen)
+
+    p = sub.add_parser("settlement", help="supplier receivable and counter nets")
+    p.add_argument("--period-id", required=True)
+    p.set_defaults(handler=cmd_settlement)
+
+    p = sub.add_parser("clear", help="minimum-fee remittance clearing")
+    p.add_argument("--document", required=True,
+                   help="JSON with balances and routes")
+    p.set_defaults(handler=cmd_clear)
 
     return parser
 

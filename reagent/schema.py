@@ -205,6 +205,110 @@ WHEN OLD.opened_day IS NOT NULL
 BEGIN
     SELECT RAISE(ABORT, 'opened_day is immutable');
 END;
+
+-- ---------------------------------------------------------------------------
+-- Billing: point vouchers, true-usage credentials and per-period bills.
+--
+-- A credential is derived (never stored) from a ``consumed`` reservation row,
+-- split portion-by-portion and identified by (reservation_id, seq). Released,
+-- merely-reserved and failed-replay rows never become credentials.
+--
+-- A period has at most one *active* bill. Reopening an open period marks its
+-- bill ``superseded`` (the receipt is kept, like a run's terminal_json) and
+-- frees both its claims and its vouchers; a ``closed`` bill's write-offs are
+-- immutable and keep their vouchers locked forever.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS billing_periods (
+    period_id     TEXT PRIMARY KEY,
+    created_day   INTEGER NOT NULL CHECK (created_day >= 0)
+);
+
+CREATE TABLE IF NOT EXISTS bottle_prices (
+    period_id   TEXT NOT NULL REFERENCES billing_periods(period_id),
+    bottle_id   TEXT NOT NULL REFERENCES bottles(bottle_id),
+    day         INTEGER,
+    price       INTEGER NOT NULL CHECK (price >= 0),
+    PRIMARY KEY (period_id, bottle_id, day)
+);
+
+CREATE TABLE IF NOT EXISTS vouchers (
+    voucher_id      TEXT PRIMARY KEY,
+    owner_counter   TEXT NOT NULL,
+    paid_price      INTEGER NOT NULL CHECK (paid_price >= 0),
+    cap_amount      INTEGER NOT NULL CHECK (cap_amount > 0),
+    valid_from_day  INTEGER NOT NULL,
+    valid_until_day INTEGER NOT NULL,
+    CHECK (valid_from_day < valid_until_day)
+);
+
+CREATE TABLE IF NOT EXISTS voucher_bottles (
+    voucher_id  TEXT NOT NULL REFERENCES vouchers(voucher_id),
+    bottle_id   TEXT NOT NULL REFERENCES bottles(bottle_id),
+    PRIMARY KEY (voucher_id, bottle_id)
+);
+
+CREATE TABLE IF NOT EXISTS voucher_counters (
+    voucher_id  TEXT NOT NULL REFERENCES vouchers(voucher_id),
+    counter_id  TEXT NOT NULL,
+    PRIMARY KEY (voucher_id, counter_id)
+);
+
+CREATE TABLE IF NOT EXISTS bills (
+    period_id    TEXT NOT NULL REFERENCES billing_periods(period_id),
+    version      INTEGER NOT NULL CHECK (version >= 1),
+    status       TEXT NOT NULL CHECK (status IN
+                     ('active', 'closed', 'superseded')),
+    issue_day    INTEGER NOT NULL CHECK (issue_day >= 0),
+    receipt_json TEXT NOT NULL,
+    PRIMARY KEY (period_id, version)
+);
+
+CREATE TABLE IF NOT EXISTS bill_lines (
+    bill_id             TEXT NOT NULL,
+    period_id           TEXT NOT NULL,
+    reservation_id      TEXT NOT NULL,
+    seq                 INTEGER NOT NULL CHECK (seq >= 0),
+    counter_id          TEXT NOT NULL,
+    bottle_id           TEXT NOT NULL,
+    settle_day          INTEGER NOT NULL,
+    list_price          INTEGER NOT NULL CHECK (list_price >= 0),
+    voucher_id          TEXT REFERENCES vouchers(voucher_id),
+    offset_amount       INTEGER NOT NULL DEFAULT 0,
+    cash_to_supplier    INTEGER NOT NULL,
+    repay_to            TEXT,
+    repay_amount        INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (bill_id, reservation_id, seq),
+    FOREIGN KEY (period_id) REFERENCES billing_periods(period_id)
+);
+
+CREATE INDEX IF NOT EXISTS bill_lines_voucher_idx
+    ON bill_lines(voucher_id);
+CREATE INDEX IF NOT EXISTS bill_lines_claim_idx
+    ON bill_lines(reservation_id, seq);
+
+-- A closed bill is a frozen write-off: nothing about it may ever move.
+CREATE TRIGGER IF NOT EXISTS bills_closed_immutable
+BEFORE UPDATE ON bills
+WHEN OLD.status = 'closed'
+BEGIN
+    SELECT RAISE(ABORT, 'closed bill write-offs are immutable');
+END;
+
+CREATE TRIGGER IF NOT EXISTS bill_lines_closed_no_update
+BEFORE UPDATE ON bill_lines
+WHEN (SELECT status FROM bills WHERE bills.period_id = bill_lines.period_id)
+     = 'closed'
+BEGIN
+    SELECT RAISE(ABORT, 'closed bill lines are immutable');
+END;
+
+CREATE TRIGGER IF NOT EXISTS bill_lines_closed_no_delete
+BEFORE DELETE ON bill_lines
+WHEN (SELECT status FROM bills WHERE bills.period_id = bill_lines.period_id)
+     = 'closed'
+BEGIN
+    SELECT RAISE(ABORT, 'closed bill lines cannot be deleted');
+END;
 """
 
 

@@ -6,8 +6,9 @@ Python 3.11 + SQLite 的试剂库存服务与运行库。只使用 `materials/71
 ## 运行
 
 ```bash
-python3 -m unittest discover -s tests -v     # 46 个测试
+python3 -m unittest discover -s tests -v     # 72 个测试
 python3 demo_719.py                          # 跑 719 操作文件并打印可手算守恒
+python3 demo_billing.py                      # 点数券结费 + 汇款清算三种结果
 ```
 
 CLI 独立入口（`--db` 指向 SQLite 文件）：
@@ -106,8 +107,61 @@ python3 -m reagent --db store.db run-ops --inventory materials/719/inventory.jso
 
 守恒终态：`U 4=1+0+3`、`P 2=2+0+0`、`LAST 1=0+1+0`。
 
+## 点数券结费（`reagent/billing.py` + `reagent/billing_match.py`）
+
+**真领用凭据**
+
+- 只有 `consumed` 预留行产生凭据，按份拆成 `(reservation_id, seq)`，运行与
+  普通 holder 都按已登记的 `holder_id` 入账；`released`、仍 `active` 的仅预留
+  行和失败重放不产生任何凭据。
+- 券效按**真实结算日** `reservations.settled_day` 判定，与预留日无关；可用区间
+  是半开的 `[valid_from_day, valid_until_day)`，止日当天不可用，券可跨月。
+- 没用上的券不退款；关账不会提前注销尚未到期的券，过期券也保留在账上。
+
+**核销优化（一券一份、一份一券）**
+
+- 抵额 = `min(标价, 券上限)`；自己的券抵自己不产生还款，用掉别柜的券时偿还
+  购买柜该券的**已付价**，未抵差额付给供应商。
+- 目标字典序：① 供应商本期收到的现金总额最少（即抵额总和最大）；② 平手时把
+  凭据按 `(预留号, 份内序号)` 排序，取券号序列字典序最小者，未用排在所有券号
+  之后。两个目标编码进同一个费用格，由矩形匈牙利算法一次求出（`billing_match.py`）。
+
+**期间、重开与关账**
+
+- 每期至多一张活动账单。`reopen` 把活动账单置为 `superseded`（回执原样保留，
+  类似运行的 `terminal_json`），释放其凭据与券后可重新出账；`closed` 账单的
+  核销被触发器冻结，券永久锁定、期间不可重开。旧期间的凭单因此可重开。
+
+## 清算席（`reagent/clearing.py`）
+
+- 按结费给出的各柜净额（应收为正、应付为负，总和为零）找全额清账方案。
+- 每条有向线路有整批容量与一次性启用费，允许中转；启用费由费用账另付，不进
+  节点余额。
+- 至多 14 条线路，故穷举线路子集（按总启用费升序），每个子集用一次最大流做
+  下界/精确边可行性检验；再逐条把金额 pin 到最小可行整数，得到确定、可重放的
+  逐条指令。无可行子集时不生成任何半批指令。
+- 确定性：同一输入多次调用返回完全相同的逐条金额。
+
+```bash
+# 结费侧
+python3 -m reagent --db s.db period-open --period-id p1 --day 30
+python3 -m reagent --db s.db price  --period-id p1 --bottle X --price 5
+python3 -m reagent --db s.db voucher --document voucher.json
+python3 -m reagent --db s.db credentials --period-id p1
+python3 -m reagent --db s.db bill --period-id p1 --day 30      # 再调一次即重放
+python3 -m reagent --db s.db settlement --period-id p1
+python3 -m reagent --db s.db period-reopen --period-id p1      # 活动账单可重开
+python3 -m reagent --db s.db bill-close --period-id p1         # 关账后冻结
+# 清算侧（document 含 balances 与 routes）
+python3 -m reagent --db s.db clear --document routes.json
+```
+
 ## 范围
 
-至 100 瓶 / 200 运行已在 `ScaleTests` 覆盖。不做分布式事务、进程强杀、
-真实仪器通信或结果判读。终态收束依赖单库事务 + 保存回执：开始失败时在同一
-事务内释放全部预留并写终态原因，之后的重放只读该回执。
+至 100 瓶 / 200 运行已在 `ScaleTests` 覆盖。结费侧每期至多 200 份凭据、
+200 张券（`MAX_CLAIMS_PER_BILL` / `MAX_VOUCHERS_PER_BILL`），核销引擎的规则
+正确性另由 200 例随机暴力对照（穷举所有券-凭据配对）保证；清算侧限定 8 个
+节点、14 条线路，最小启用费与逐线金额由 150 例随机暴力对照（穷举所有整数
+流量组合）校验。不做分布式事务、进程强杀、真实仪器通信或结果判读。终态收束
+依赖单库事务 + 保存回执：开始失败时在同一事务内释放全部预留并写终态原因，
+之后的重放只读该回执。
