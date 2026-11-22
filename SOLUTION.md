@@ -1,4 +1,4 @@
-# Basket quote service and after-sales ledger
+# Basket quote service, after-sales ledger and physical coupon paper
 
 A standalone, Python 3.11 solution for the brief in `README.md`:
 
@@ -7,7 +7,11 @@ A standalone, Python 3.11 solution for the brief in `README.md`:
   allocation;
 * an **after-sales ledger** that binds each sale to a complete published quote
   and refunds exactly the per-unit amount that sale paid, with idempotent
-  requests, all-or-nothing overlap rejection, and transactional stock moves.
+  requests, all-or-nothing overlap rejection, and transactional stock moves;
+* a **physical double-sided coupon paper** layer: grid sheets with per-edge
+  perforations, real tear sequences, per-ticket redemption, and a joint
+  optimiser that minimises the combined payment of up to five baskets while
+  handing each redeemed ticket to exactly one basket.
 
 No external dependencies are required — only the standard library and SQLite.
 
@@ -38,6 +42,12 @@ quote = svc.quote(basket, coupons=[], request_id="q1", snapshot_id=snap)
 sale = svc.register_sale("S1", quote=quote)                   # binds the full quote
 result = svc.return_units("r1", "S1", ["b"], {"b": "RESTOCK"})
 svc.adjust_inventory("adj1", "B", 3, "RESTOCK")               # independent stock event
+
+# Physical coupon paper -------------------------------------------------
+svc.register_sheet("s1", rows=1, cols=2, perforations=["V0,0"], tickets=[...])
+svc.try_tear("s1", ["A", "B"])                                # trial: never moves paper
+trial = svc.quote_group("g1", baskets=[...], request_id="qg") # joint optimum
+svc.commit_group("qg", {"basket-1": "S1", "basket-2": "S2"})  # moves paper + records sales
 ```
 
 `register_sale` also accepts `request_id=`/`quote_id=` when the ledger shares
@@ -87,13 +97,51 @@ payload structurally and **never re-runs the optimizer** for sales or refunds.
 * Sales do not imply stock-out; after-sales stock starts at zero and is
   reconciled only from its own events.
 
-### Error codes
+### Physical coupon paper
 
+* A **sheet** is a `rows x cols` grid with `rows, cols <= 6` and at most 12
+  tickets across both faces (`tickets ≤ 12`, at most 12 sheets per event).  A
+  ticket has a stable `ticket_id`, a `side` (`front`/`back`) and an inclusive
+  target rectangle `[row0, col0, row1, col1]` in one shared paper coordinate
+  system.  Tickets on the same face may not overlap.
+* Perforations are unit edges `V r,c` (between `(r,c)` and `(r,c+1)`) and
+  `H r,c` (between `(r,c)` and `(r+1,c)`).  A single tear splits one current
+  rectangle along one full line, edge to edge; every unit edge the line runs
+  along inside that rectangle must be punched.  `add_correction` adds holes the
+  craft record missed (add-only, idempotent by `fix_id`).
+* A ticket is redeemable only when some current piece **equals** its
+  rectangle.  Taking that piece hands over *both faces*.  Unused pieces remain
+  as physical remainder (they may be discarded later).  Two tickets printed on
+  the same rectangle (front and back) can back at most one claim.
+* `try_tear(sheet_id, ticket_ids)` is a pure trial returning a real ordered
+  sequence of cuts, or `TEAR_INFEASIBLE`.  It never changes paper.
+* `quote_group(group_id, baskets, ...)` minimises the combined paid amount of
+  up to 5 baskets (each ≤ 10 units) over the paper physically present, honouring
+  only `accepted_coupons` when supplied.  Every basket still uses the original
+  quote rules (SKU requirements, original-price coverage, proportional
+  allocation), each promotion is used at most once per basket, and each physical
+  ticket goes to exactly one basket.  Ties are broken by the original
+  per-basket ordering and then by basket id.  An empty honoured catalogue is
+  valid (all baskets pay full price and no paper moves); only an *infeasible*
+  combination raises `NO_FEASIBLE_PLAN`.
+* `commit_group(request_id, sales)` re-checks the **current** pieces inside one
+  `BEGIN IMMEDIATE` transaction, records the hand-over, subtracts the taken
+  pieces, and registers each basket's official quote with the ledger so returns
+  refund that basket's original per-unit paid amounts.  Two counters racing for
+  the same sheet: one commits, the loser gets `PAPER_CONFLICT` and nothing is
+  written.  Physically disjoint trials on one sheet both commit.
+* Trials (`try_tear`, `quote_group(store=False)`) never move paper.  Stored
+  quotes replay by `request_id`; different content is `GROUP_CONFLICT`.
+
+### Error codes
 `INVALID_BASKET`, `INVALID_COUPON`, `INVALID_INPUT`, `INVALID_GRADE`,
 `INVALID_QUOTE`, `UNKNOWN_SNAPSHOT`, `SNAPSHOT_CONFLICT`, `REQUEST_CONFLICT`,
 `QUOTE_CONFLICT`, `UNKNOWN_QUOTE`, `UNKNOWN_SALE`, `SALE_CONFLICT`,
 `QUOTE_MISMATCH`, `UNIT_INELIGIBLE`, `UNIT_ALREADY_RETURNED`,
-`OVERLAPPING_RETURN`, `INVENTORY_CONFLICT`.
+`OVERLAPPING_RETURN`, `INVENTORY_CONFLICT`, `INVALID_SHEET`, `INVALID_TICKET`,
+`INVALID_PERFORATION`, `UNKNOWN_SHEET`, `SHEET_CONFLICT`, `TEAR_INFEASIBLE`,
+`PAPER_CONFLICT`, `INVALID_GROUP`, `GROUP_CONFLICT`, `UNKNOWN_GROUP`,
+`NO_FEASIBLE_PLAN`.
 
 Every public operation either commits a complete result or raises before any
 partial state is written.
@@ -106,6 +154,22 @@ partial state is written.
   prefix greedy fixes the lexicographically smallest unit-id lists. This is
   fast (milliseconds at the specified limits) and deterministic. Greedy
   "largest D first" is demonstrably wrong (see the `greedy_trap` scenario).
+* **Physical paper is state, not a hint.** A sheet's current pieces are stored
+  in SQLite and are the only source of truth.  `commit_group` re-runs the tear
+  search on those pieces inside the write transaction, so a stale trial can
+  never hand over paper that another counter already took.  Trials operate on a
+  pure copy of the state and never mutate it.
+* **Tear reachability is exact.** Isolating a rectangle means recursively
+  splitting pieces without ever cutting across a still-pending target; the
+  search is memoised on `(pieces, pending targets, punches)` and is small at
+  the brief's limits (≤ 6x6, ≤ 12 tickets).
+* **Joint optimisation, per-basket quotes.** The group optimiser enumerates
+  feasible coupon subsets per basket, searches basket by basket under a
+  suffix-discount bound, then assigns distinct physical instances.  Each chosen
+  basket plan is turned back into an ordinary complete quote (the old rules),
+  so the ledger binds it unchanged and refunds stay per-unit exact.  Ties use
+  the original per-basket ordering; cross-basket allocation is deterministic by
+  basket id.
 * **Snapshot-bound quotes.** Quotes carry the snapshot id, the canonical
   basket, the coupon catalogue, assignments, the full allocation and the total.
   Passing a different ad-hoc coupon list under an existing snapshot is a
@@ -133,16 +197,19 @@ basket_service/
   db.py            SQLite schema and transaction helpers
   quote_service.py snapshots and quote API
   ledger.py        sales, returns, inventory, audits
+  sheets.py        sheet geometry, perforations, tear reachability
+  paper.py         paper state, tear sequences, joint group optimiser
+  sheet_service.py sheet registry, trials, group quotes, hand-over commits
   planner.py       JSON plan runner
   demo.py          demo driver + CLI (demo / run-plan / self-check)
-tests/             optimizer, quote-service, ledger, reference tests
+tests/             optimizer, quote-service, ledger, reference, paper tests
 data/              real SQLite databases (created by the demo)
 results/           JSON plans and result records
 ```
 
 ## Verification
 
-`python3 -m basket_service demo` runs 19 checks, all computed against
+`python3 -m basket_service demo` runs 29 checks, all computed against
 independent references:
 
 * case-material quotes vs. exhaustive enumeration;
@@ -154,4 +221,7 @@ independent references:
 * lost-response retry replay, whole-request overlap rejection, independent
   stock adjustments, and a two-thread concurrent return race with no double
   stock;
+* the worked paper example (punched split 12, unpunched whole piece 14, cheaper
+  Y 7), a real two-stage tear, a same-sheet counter race (one `PAPER_CONFLICT`),
+  original-paid refunds from a paper sale, and a receipt-time perforation fix;
 * reopening the database preserves everything.

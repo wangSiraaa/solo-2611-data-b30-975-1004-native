@@ -21,6 +21,14 @@ Supported ops::
     inventory          skus?
     audit_sales
     audit_inventory
+    register_sheet     sheet_id?, spec | rows/cols/perforations/tickets, corrections?
+    get_sheet          sheet_id
+    list_sheets
+    add_correction     fix_id, sheet_id, edges
+    try_tear           sheet_id, ticket_ids
+    quote_group        group_id, baskets, request_id?, accepted_coupons?, store?
+    get_group_quote    request_id
+    commit_group       request_id, sales
 
 Any step may set ``"expect_error": <code>`` (string or list) to assert that the
 operation is rejected with that error code; the transcript then records a
@@ -144,6 +152,36 @@ def _execute(service, step: Mapping[str, Any], env: Mapping[str, Any]) -> Any:
         return service.audit_sales()
     if op == "audit_inventory":
         return service.audit_inventory()
+    if op == "register_sheet":
+        return service.register_sheet(
+            step.get("sheet_id"),
+            spec=step.get("spec"),
+            rows=step.get("rows"),
+            cols=step.get("cols"),
+            perforations=step.get("perforations"),
+            tickets=step.get("tickets"),
+            corrections=step.get("corrections"),
+        )
+    if op == "get_sheet":
+        return service.get_sheet(_require(step, "sheet_id", op))
+    if op == "list_sheets":
+        return service.list_sheets()
+    if op == "add_correction":
+        return service.add_correction(_require(step, "fix_id", op), _require(step, "sheet_id", op), _require(step, "edges", op))
+    if op == "try_tear":
+        return service.try_tear(_require(step, "sheet_id", op), _require(step, "ticket_ids", op))
+    if op == "quote_group":
+        return service.quote_group(
+            _require(step, "group_id", op),
+            _require(step, "baskets", op),
+            request_id=step.get("request_id"),
+            accepted_coupons=step.get("accepted_coupons"),
+            store=step.get("store", True),
+        )
+    if op == "get_group_quote":
+        return service.get_group_quote(_require(step, "request_id", op))
+    if op == "commit_group":
+        return service.commit_group(_require(step, "request_id", op), _require(step, "sales", op))
     raise PlanError(f"unknown op {op!r}", step_index=-1, step=step, transcript=[])
 
 

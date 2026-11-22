@@ -184,5 +184,59 @@ class Database:
                 qty INTEGER NOT NULL,
                 PRIMARY KEY (sku, bucket)
             );
+
+            -- Physical double-sided coupon paper --------------------------
+            CREATE TABLE IF NOT EXISTS paper_sheets (
+                sheet_id TEXT PRIMARY KEY,
+                spec_json TEXT NOT NULL,
+                corrections_json TEXT NOT NULL,
+                pieces_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS paper_groups (
+                request_id TEXT PRIMARY KEY,
+                group_id TEXT NOT NULL,
+                basket_sig TEXT NOT NULL,
+                quote_json TEXT NOT NULL,
+                registered INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS paper_group_sales (
+                request_id TEXT NOT NULL,
+                basket_id TEXT NOT NULL,
+                sale_id TEXT NOT NULL,
+                PRIMARY KEY (request_id, basket_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS paper_handovers (
+                seq INTEGER PRIMARY KEY AUTOINCREMENT,
+                request_id TEXT NOT NULL,
+                sheet_id TEXT NOT NULL,
+                basket_id TEXT NOT NULL,
+                rect_json TEXT NOT NULL,
+                ticket_ids_json TEXT NOT NULL,
+                coupon_ids_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS paper_consumptions (
+                seq INTEGER PRIMARY KEY AUTOINCREMENT,
+                request_id TEXT NOT NULL,
+                group_id TEXT NOT NULL,
+                sheet_id TEXT NOT NULL,
+                before_json TEXT NOT NULL,
+                after_json TEXT NOT NULL,
+                steps_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS paper_perforation_fixes (
+                fix_id TEXT PRIMARY KEY,
+                sheet_id TEXT NOT NULL,
+                edges_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
             """
         )

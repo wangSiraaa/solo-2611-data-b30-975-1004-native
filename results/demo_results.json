@@ -338,9 +338,855 @@
         "successes": 1
       },
       "ok": true
+    },
+    {
+      "actual": 12,
+      "check": "punched_two_tickets_total_12",
+      "expected": 12,
+      "ok": true
+    },
+    {
+      "actual": [
+        "V"
+      ],
+      "check": "punched_tear_is_single_vertical_cut",
+      "expected": [
+        "V"
+      ],
+      "ok": true
+    },
+    {
+      "actual": {
+        "P-jia": 6,
+        "P-yi": 6
+      },
+      "check": "commit_registers_two_sales_per_original_quotes",
+      "expected": {
+        "P-jia": 6,
+        "P-yi": 6
+      },
+      "ok": true
+    },
+    {
+      "actual": 6,
+      "check": "paper_sale_refunds_original_paid",
+      "expected": 6,
+      "ok": true
+    },
+    {
+      "actual": [],
+      "check": "commit_consumed_whole_sheet",
+      "expected": [],
+      "ok": true
+    },
+    {
+      "actual": 14,
+      "check": "unpunched_only_whole_ticket_total_14",
+      "expected": 14,
+      "ok": true
+    },
+    {
+      "actual": "TEAR_INFEASIBLE",
+      "check": "unpunched_split_rejected",
+      "expected": "TEAR_INFEASIBLE",
+      "ok": true
+    },
+    {
+      "actual": 7,
+      "check": "cheap_y_whole_piece_total_7",
+      "expected": 7,
+      "ok": true
+    },
+    {
+      "actual": "PAPER_CONFLICT",
+      "check": "second_counter_on_used_paper_conflicts",
+      "expected": "PAPER_CONFLICT",
+      "ok": true
+    },
+    {
+      "actual": "TEAR_INFEASIBLE -> 1 steps",
+      "check": "receipt_correction_unblocks_tear",
+      "expected": "TEAR_INFEASIBLE -> 1 step",
+      "ok": true
     }
   ],
   "database": "/workspace/data/demo.db",
+  "paper": {
+    "cheap_y": {
+      "trial": {
+        "baskets": [
+          {
+            "basket_id": "jia",
+            "coupon_ids": [
+              "C"
+            ],
+            "original_total": 10,
+            "paper": [
+              {
+                "coupon_id": "C",
+                "rect": [
+                  0,
+                  0,
+                  0,
+                  1
+                ],
+                "sheet_id": "solid",
+                "side": "back",
+                "ticket_id": "C"
+              }
+            ],
+            "quote": {
+              "allocation": [
+                {
+                  "coupon_id": "C",
+                  "discount": 6,
+                  "paid": 4,
+                  "price": 10,
+                  "sku": "X",
+                  "unit_id": "jx"
+                }
+              ],
+              "assignments": {
+                "C": [
+                  "jx"
+                ]
+              },
+              "basket": [
+                {
+                  "price": 10,
+                  "sku": "X",
+                  "unit_id": "jx"
+                }
+              ],
+              "coupon_ids": [
+                "C"
+              ],
+              "coupons": [
+                {
+                  "D": 6,
+                  "coupon_id": "C",
+                  "requires": {
+                    "X": 1
+                  }
+                }
+              ],
+              "original_total": 10,
+              "request_id": "paper:jia",
+              "snapshot_id": "paper",
+              "total": 4,
+              "total_discount": 6
+            },
+            "total": 4,
+            "total_discount": 6
+          },
+          {
+            "basket_id": "yi",
+            "coupon_ids": [],
+            "original_total": 3,
+            "paper": [],
+            "quote": {
+              "allocation": [
+                {
+                  "coupon_id": null,
+                  "discount": 0,
+                  "paid": 3,
+                  "price": 3,
+                  "sku": "Y",
+                  "unit_id": "yy"
+                }
+              ],
+              "assignments": {},
+              "basket": [
+                {
+                  "price": 3,
+                  "sku": "Y",
+                  "unit_id": "yy"
+                }
+              ],
+              "coupon_ids": [],
+              "coupons": [],
+              "original_total": 3,
+              "request_id": "paper:yi",
+              "snapshot_id": "paper",
+              "total": 3,
+              "total_discount": 0
+            },
+            "total": 3,
+            "total_discount": 0
+          }
+        ],
+        "group_id": "solid",
+        "handovers": [
+          {
+            "basket_id": "jia",
+            "consumes_ticket_ids": [
+              "C"
+            ],
+            "coupon_id": "C",
+            "rect": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "sheet_id": "solid",
+            "side": "back",
+            "ticket_id": "C"
+          }
+        ],
+        "ok": true,
+        "original_total": 13,
+        "projected_remaining": {
+          "solid": []
+        },
+        "request_id": "paper-cheap-y",
+        "tears": {
+          "solid": []
+        },
+        "total_discount": 6,
+        "total_paid": 7
+      }
+    },
+    "checks": [
+      {
+        "actual": 12,
+        "check": "punched_two_tickets_total_12",
+        "expected": 12,
+        "ok": true
+      },
+      {
+        "actual": [
+          "V"
+        ],
+        "check": "punched_tear_is_single_vertical_cut",
+        "expected": [
+          "V"
+        ],
+        "ok": true
+      },
+      {
+        "actual": {
+          "P-jia": 6,
+          "P-yi": 6
+        },
+        "check": "commit_registers_two_sales_per_original_quotes",
+        "expected": {
+          "P-jia": 6,
+          "P-yi": 6
+        },
+        "ok": true
+      },
+      {
+        "actual": 6,
+        "check": "paper_sale_refunds_original_paid",
+        "expected": 6,
+        "ok": true
+      },
+      {
+        "actual": [],
+        "check": "commit_consumed_whole_sheet",
+        "expected": [],
+        "ok": true
+      },
+      {
+        "actual": 14,
+        "check": "unpunched_only_whole_ticket_total_14",
+        "expected": 14,
+        "ok": true
+      },
+      {
+        "actual": "TEAR_INFEASIBLE",
+        "check": "unpunched_split_rejected",
+        "expected": "TEAR_INFEASIBLE",
+        "ok": true
+      },
+      {
+        "actual": 7,
+        "check": "cheap_y_whole_piece_total_7",
+        "expected": 7,
+        "ok": true
+      },
+      {
+        "actual": "PAPER_CONFLICT",
+        "check": "second_counter_on_used_paper_conflicts",
+        "expected": "PAPER_CONFLICT",
+        "ok": true
+      },
+      {
+        "actual": "TEAR_INFEASIBLE -> 1 steps",
+        "check": "receipt_correction_unblocks_tear",
+        "expected": "TEAR_INFEASIBLE -> 1 step",
+        "ok": true
+      }
+    ],
+    "committed": {
+      "basket_totals": {
+        "jia": 6,
+        "yi": 6
+      },
+      "group_id": "punched",
+      "handovers": [
+        {
+          "basket_id": "jia",
+          "consumes_ticket_ids": [
+            "A"
+          ],
+          "coupon_ids": [
+            "A"
+          ],
+          "rect": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "sheet_id": "punched"
+        },
+        {
+          "basket_id": "yi",
+          "consumes_ticket_ids": [
+            "B"
+          ],
+          "coupon_ids": [
+            "B"
+          ],
+          "rect": [
+            0,
+            1,
+            0,
+            1
+          ],
+          "sheet_id": "punched"
+        }
+      ],
+      "ok": true,
+      "repeated": false,
+      "request_id": "paper-punched",
+      "sales": {
+        "jia": "P-jia",
+        "yi": "P-yi"
+      },
+      "sheets": {
+        "punched": []
+      },
+      "total_paid": 12
+    },
+    "correction": {
+      "after_steps": [
+        {
+          "at": 0,
+          "kind": "H",
+          "piece": [
+            0,
+            0,
+            1,
+            1
+          ],
+          "produces": [
+            [
+              0,
+              0,
+              0,
+              1
+            ],
+            [
+              1,
+              0,
+              1,
+              1
+            ]
+          ],
+          "required_edges": [
+            "H0,0",
+            "H0,1"
+          ]
+        }
+      ],
+      "before": "TEAR_INFEASIBLE"
+    },
+    "punched": {
+      "tear": {
+        "ok": true,
+        "projected_remaining": [],
+        "rects": [
+          [
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0,
+            1
+          ]
+        ],
+        "sheet_id": "punched",
+        "steps": [
+          {
+            "at": 0,
+            "kind": "V",
+            "piece": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "produces": [
+              [
+                0,
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                1,
+                0,
+                1
+              ]
+            ],
+            "required_edges": [
+              "V0,0"
+            ]
+          }
+        ],
+        "ticket_ids": [
+          "A",
+          "B"
+        ]
+      },
+      "trial": {
+        "baskets": [
+          {
+            "basket_id": "jia",
+            "coupon_ids": [
+              "A"
+            ],
+            "original_total": 10,
+            "paper": [
+              {
+                "coupon_id": "A",
+                "rect": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "sheet_id": "punched",
+                "side": "front",
+                "ticket_id": "A"
+              }
+            ],
+            "quote": {
+              "allocation": [
+                {
+                  "coupon_id": "A",
+                  "discount": 4,
+                  "paid": 6,
+                  "price": 10,
+                  "sku": "X",
+                  "unit_id": "jx"
+                }
+              ],
+              "assignments": {
+                "A": [
+                  "jx"
+                ]
+              },
+              "basket": [
+                {
+                  "price": 10,
+                  "sku": "X",
+                  "unit_id": "jx"
+                }
+              ],
+              "coupon_ids": [
+                "A"
+              ],
+              "coupons": [
+                {
+                  "D": 4,
+                  "coupon_id": "A",
+                  "requires": {
+                    "X": 1
+                  }
+                }
+              ],
+              "original_total": 10,
+              "request_id": "paper:jia",
+              "snapshot_id": "paper",
+              "total": 6,
+              "total_discount": 4
+            },
+            "total": 6,
+            "total_discount": 4
+          },
+          {
+            "basket_id": "yi",
+            "coupon_ids": [
+              "B"
+            ],
+            "original_total": 10,
+            "paper": [
+              {
+                "coupon_id": "B",
+                "rect": [
+                  0,
+                  1,
+                  0,
+                  1
+                ],
+                "sheet_id": "punched",
+                "side": "front",
+                "ticket_id": "B"
+              }
+            ],
+            "quote": {
+              "allocation": [
+                {
+                  "coupon_id": "B",
+                  "discount": 4,
+                  "paid": 6,
+                  "price": 10,
+                  "sku": "Y",
+                  "unit_id": "yy"
+                }
+              ],
+              "assignments": {
+                "B": [
+                  "yy"
+                ]
+              },
+              "basket": [
+                {
+                  "price": 10,
+                  "sku": "Y",
+                  "unit_id": "yy"
+                }
+              ],
+              "coupon_ids": [
+                "B"
+              ],
+              "coupons": [
+                {
+                  "D": 4,
+                  "coupon_id": "B",
+                  "requires": {
+                    "Y": 1
+                  }
+                }
+              ],
+              "original_total": 10,
+              "request_id": "paper:yi",
+              "snapshot_id": "paper",
+              "total": 6,
+              "total_discount": 4
+            },
+            "total": 6,
+            "total_discount": 4
+          }
+        ],
+        "group_id": "punched",
+        "handovers": [
+          {
+            "basket_id": "jia",
+            "consumes_ticket_ids": [
+              "A"
+            ],
+            "coupon_id": "A",
+            "rect": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "sheet_id": "punched",
+            "side": "front",
+            "ticket_id": "A"
+          },
+          {
+            "basket_id": "yi",
+            "consumes_ticket_ids": [
+              "B"
+            ],
+            "coupon_id": "B",
+            "rect": [
+              0,
+              1,
+              0,
+              1
+            ],
+            "sheet_id": "punched",
+            "side": "front",
+            "ticket_id": "B"
+          }
+        ],
+        "ok": true,
+        "original_total": 20,
+        "projected_remaining": {
+          "punched": []
+        },
+        "request_id": "paper-punched",
+        "tears": {
+          "punched": [
+            {
+              "at": 0,
+              "kind": "V",
+              "piece": [
+                0,
+                0,
+                0,
+                1
+              ],
+              "produces": [
+                [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  1,
+                  0,
+                  1
+                ]
+              ],
+              "required_edges": [
+                "V0,0"
+              ]
+            }
+          ]
+        },
+        "total_discount": 8,
+        "total_paid": 12
+      }
+    },
+    "race": {
+      "second_commit_error": "PAPER_CONFLICT"
+    },
+    "refund": {
+      "cumulative_refund": 6,
+      "inventory": {
+        "RESTOCK": {
+          "X": 1
+        },
+        "SCRAP": {}
+      },
+      "items": [
+        {
+          "grade": "RESTOCK",
+          "original_paid": 6,
+          "refund": 6,
+          "sku": "X",
+          "unit_id": "jx"
+        }
+      ],
+      "ok": true,
+      "refund_total": 6,
+      "remaining_refundable": [],
+      "repeated": false,
+      "request_id": "paper-ret-jia",
+      "sale_id": "P-jia",
+      "sale_total": 6
+    },
+    "sales": {
+      "P-jia": {
+        "ok": true,
+        "quote_id": "paper:jia",
+        "quote_sig": "0c803ff1e0685ae911540852f54702f54a5a1440aeb16629bc65320facf3e23f",
+        "refunded_total": 0,
+        "remaining_refundable": [
+          "jx"
+        ],
+        "repeated": false,
+        "sale_id": "P-jia",
+        "snapshot_id": "paper",
+        "total": 6,
+        "units": [
+          {
+            "coupon_id": "A",
+            "discount": 4,
+            "grade": null,
+            "paid": 6,
+            "price": 10,
+            "return_request_id": null,
+            "returned": 0,
+            "sku": "X",
+            "unit_id": "jx"
+          }
+        ]
+      },
+      "P-yi": {
+        "ok": true,
+        "quote_id": "paper:yi",
+        "quote_sig": "d3b7451646476236b50e8797bbed01ae6893c206a52b51ac5a0c89ef55b83ff2",
+        "refunded_total": 0,
+        "remaining_refundable": [
+          "yy"
+        ],
+        "repeated": false,
+        "sale_id": "P-yi",
+        "snapshot_id": "paper",
+        "total": 6,
+        "units": [
+          {
+            "coupon_id": "B",
+            "discount": 4,
+            "grade": null,
+            "paid": 6,
+            "price": 10,
+            "return_request_id": null,
+            "returned": 0,
+            "sku": "Y",
+            "unit_id": "yy"
+          }
+        ]
+      }
+    },
+    "solid": {
+      "tear_error": "TEAR_INFEASIBLE",
+      "trial": {
+        "baskets": [
+          {
+            "basket_id": "jia",
+            "coupon_ids": [
+              "C"
+            ],
+            "original_total": 10,
+            "paper": [
+              {
+                "coupon_id": "C",
+                "rect": [
+                  0,
+                  0,
+                  0,
+                  1
+                ],
+                "sheet_id": "solid",
+                "side": "back",
+                "ticket_id": "C"
+              }
+            ],
+            "quote": {
+              "allocation": [
+                {
+                  "coupon_id": "C",
+                  "discount": 6,
+                  "paid": 4,
+                  "price": 10,
+                  "sku": "X",
+                  "unit_id": "jx"
+                }
+              ],
+              "assignments": {
+                "C": [
+                  "jx"
+                ]
+              },
+              "basket": [
+                {
+                  "price": 10,
+                  "sku": "X",
+                  "unit_id": "jx"
+                }
+              ],
+              "coupon_ids": [
+                "C"
+              ],
+              "coupons": [
+                {
+                  "D": 6,
+                  "coupon_id": "C",
+                  "requires": {
+                    "X": 1
+                  }
+                }
+              ],
+              "original_total": 10,
+              "request_id": "paper:jia",
+              "snapshot_id": "paper",
+              "total": 4,
+              "total_discount": 6
+            },
+            "total": 4,
+            "total_discount": 6
+          },
+          {
+            "basket_id": "yi",
+            "coupon_ids": [],
+            "original_total": 10,
+            "paper": [],
+            "quote": {
+              "allocation": [
+                {
+                  "coupon_id": null,
+                  "discount": 0,
+                  "paid": 10,
+                  "price": 10,
+                  "sku": "Y",
+                  "unit_id": "yy"
+                }
+              ],
+              "assignments": {},
+              "basket": [
+                {
+                  "price": 10,
+                  "sku": "Y",
+                  "unit_id": "yy"
+                }
+              ],
+              "coupon_ids": [],
+              "coupons": [],
+              "original_total": 10,
+              "request_id": "paper:yi",
+              "snapshot_id": "paper",
+              "total": 10,
+              "total_discount": 0
+            },
+            "total": 10,
+            "total_discount": 0
+          }
+        ],
+        "group_id": "solid",
+        "handovers": [
+          {
+            "basket_id": "jia",
+            "consumes_ticket_ids": [
+              "C"
+            ],
+            "coupon_id": "C",
+            "rect": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "sheet_id": "solid",
+            "side": "back",
+            "ticket_id": "C"
+          }
+        ],
+        "ok": true,
+        "original_total": 20,
+        "projected_remaining": {
+          "solid": []
+        },
+        "request_id": "paper-solid",
+        "tears": {
+          "solid": []
+        },
+        "total_discount": 6,
+        "total_paid": 14
+      }
+    },
+    "summary": {
+      "checks": 10,
+      "passed": 10
+    }
+  },
   "plan": {
     "note": "The structured operations executed above, replayable with `python -m basket_service run-plan`.",
     "steps": [
@@ -3185,8 +4031,8 @@
     }
   },
   "summary": {
-    "checks": 19,
+    "checks": 29,
     "failed": 0,
-    "passed": 19
+    "passed": 29
   }
 }

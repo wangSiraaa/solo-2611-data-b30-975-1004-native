@@ -100,6 +100,7 @@ class AfterSalesLedger:
         quote_id: Optional[str] = None,
         request_id: Optional[str] = None,
         snapshot_id: Optional[str] = None,
+        _in_tx: Any = None,
     ) -> Dict[str, Any]:
         sale_id = require_id(sale_id, INVALID_INPUT, "sale_id")
         if quote is None:
@@ -144,42 +145,52 @@ class AfterSalesLedger:
 
         quote_sig = _hash(_quote_core(validated))
         total = validated["total"]
+
+        if _in_tx is not None:
+            # Caller already holds a write transaction (e.g. a paper group
+            # commit); register atomically inside it, doing no I/O of our own.
+            return self._register_sale_in(conn=_in_tx, sale_id=sale_id, validated=validated, quote_sig=quote_sig, quote_request_id=quote_request_id)
+
         with self.db.transaction() as conn:
-            existing = conn.execute("SELECT * FROM sales WHERE sale_id = ?", (sale_id,)).fetchone()
-            if existing is not None:
-                if existing["quote_sig"] != quote_sig:
-                    raise BasketError(
-                        SALE_CONFLICT,
-                        "sale_id already bound to a different complete quote",
-                        {"sale_id": sale_id},
-                    )
-                return self._sale_result(conn, sale_id, repeated=True)
+            return self._register_sale_in(conn=conn, sale_id=sale_id, validated=validated, quote_sig=quote_sig, quote_request_id=quote_request_id)
+
+    def _register_sale_in(self, *, conn, sale_id: str, validated: Mapping[str, Any], quote_sig: str, quote_request_id: str) -> Dict[str, Any]:
+        total = validated["total"]
+        existing = conn.execute("SELECT * FROM sales WHERE sale_id = ?", (sale_id,)).fetchone()
+        if existing is not None:
+            if existing["quote_sig"] != quote_sig:
+                raise BasketError(
+                    SALE_CONFLICT,
+                    "sale_id already bound to a different complete quote",
+                    {"sale_id": sale_id},
+                )
+            return self._sale_result(conn, sale_id, repeated=True)
+        conn.execute(
+            "INSERT INTO sales (sale_id, quote_id, snapshot_id, quote_sig, quote_json, total, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                sale_id,
+                quote_request_id,
+                validated["snapshot_id"],
+                quote_sig,
+                canonical_json(validated),
+                total,
+                utc_now(),
+            ),
+        )
+        for entry in validated["allocation"]:
             conn.execute(
-                "INSERT INTO sales (sale_id, quote_id, snapshot_id, quote_sig, quote_json, total, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO sale_units (sale_id, unit_id, sku, price, coupon_id, discount, paid, returned) VALUES (?, ?, ?, ?, ?, ?, ?, 0)",
                 (
                     sale_id,
-                    quote_request_id,
-                    validated["snapshot_id"],
-                    quote_sig,
-                    canonical_json(validated),
-                    total,
-                    utc_now(),
+                    entry["unit_id"],
+                    entry["sku"],
+                    entry["price"],
+                    entry["coupon_id"],
+                    entry["discount"],
+                    entry["paid"],
                 ),
             )
-            for entry in validated["allocation"]:
-                conn.execute(
-                    "INSERT INTO sale_units (sale_id, unit_id, sku, price, coupon_id, discount, paid, returned) VALUES (?, ?, ?, ?, ?, ?, ?, 0)",
-                    (
-                        sale_id,
-                        entry["unit_id"],
-                        entry["sku"],
-                        entry["price"],
-                        entry["coupon_id"],
-                        entry["discount"],
-                        entry["paid"],
-                    ),
-                )
-            return self._sale_result(conn, sale_id, repeated=False)
+        return self._sale_result(conn, sale_id, repeated=False)
 
     def get_sale(self, sale_id: str) -> Dict[str, Any]:
         with self.db.connection() as conn:

@@ -19,15 +19,17 @@ from .db import Database
 from .errors import BasketError
 from .ledger import AfterSalesLedger
 from .quote_service import QuoteService
+from .sheet_service import SheetService
 
 
 class Service:
-    """Thin façade wiring the quote service and ledger onto one database."""
+    """Thin façade wiring the quote service, ledger and physical paper."""
 
     def __init__(self, path: str = ":memory:", *, busy_timeout_ms: int = 30000):
         self.db = Database(path, busy_timeout_ms=busy_timeout_ms)
         self.quotes = QuoteService(self.db)
         self.ledger = AfterSalesLedger(self.db)
+        self.paper = SheetService(self.db)
 
     # quote surface -------------------------------------------------------
     def publish_snapshot(self, products=None, coupons=None, *, snapshot_id=None) -> str:
@@ -66,6 +68,31 @@ class Service:
 
     def audit_sales(self):
         return self.ledger.audit_sales()
+
+    # physical paper surface ---------------------------------------------
+    def register_sheet(self, sheet_id=None, **kwargs):
+        return self.paper.register_sheet(sheet_id, **kwargs)
+
+    def add_correction(self, fix_id, sheet_id, edges):
+        return self.paper.add_correction(fix_id, sheet_id, edges)
+
+    def get_sheet(self, sheet_id):
+        return self.paper.get_sheet(sheet_id)
+
+    def list_sheets(self):
+        return self.paper.list_sheets()
+
+    def try_tear(self, sheet_id, ticket_ids):
+        return self.paper.try_tear(sheet_id, ticket_ids)
+
+    def quote_group(self, group_id, baskets, **kwargs):
+        return self.paper.quote_group(group_id, baskets, **kwargs)
+
+    def get_group_quote(self, request_id):
+        return self.paper.get_group_quote(request_id)
+
+    def commit_group(self, request_id, sales):
+        return self.paper.commit_group(request_id, sales)
 
     # cross-cutting -------------------------------------------------------
     def run(self, plan):

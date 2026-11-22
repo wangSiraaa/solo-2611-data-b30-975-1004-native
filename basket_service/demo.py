@@ -49,6 +49,135 @@ def _case_material() -> Dict[str, Any]:
     return {"basket": basket, "before": before, "added": added, "return_request": case["return_request"]}
 
 
+def _run_paper_demo(db_path: str) -> Dict[str, Any]:
+    """Physical double-sided paper: the brief's worked examples plus a race.
+
+    Uses its own database so the electronic-quote demo above stays untouched.
+    """
+
+    from .errors import BasketError
+
+    def fresh(name: str):
+        """Each isolated example gets its own database: ``quote_group`` truthfully
+        aggregates *every* sheet registered at a venue, so mixing examples in one
+        database would let their paper compete."""
+
+        path = str(Path(db_path).with_suffix(f".paper-{name}.db"))
+        for suffix in ("", "-wal", "-shm"):
+            stale = Path(path + suffix)
+            if stale.exists():
+                stale.unlink()
+        return open_service(path)
+
+    def tickets():
+        return [
+            {"ticket_id": "A", "side": "front", "rect": [0, 0, 0, 0], "coupon_id": "A", "D": 4, "requires": {"X": 1}},
+            {"ticket_id": "B", "side": "front", "rect": [0, 1, 0, 1], "coupon_id": "B", "D": 4, "requires": {"Y": 1}},
+            {"ticket_id": "C", "side": "back", "rect": [0, 0, 0, 1], "coupon_id": "C", "D": 6, "requires": {"X": 1}},
+        ]
+
+    def baskets(y_price=10):
+        return [
+            {"basket_id": "jia", "units": [{"unit_id": "jx", "sku": "X", "price": 10}]},
+            {"basket_id": "yi", "units": [{"unit_id": "yy", "sku": "Y", "price": y_price}]},
+        ]
+
+    out: Dict[str, Any] = {}
+    checks = out["checks"] = []
+
+    # 1) Punched middle: split into A + B, total 12.  Then commit + audit.
+    svc = fresh("punched")
+    svc.register_sheet("punched", rows=1, cols=2, perforations=["V0,0"], tickets=tickets())
+    trial = svc.quote_group("punched", baskets(), request_id="paper-punched")
+    split = svc.try_tear("punched", ["A", "B"])
+    out["punched"] = {"trial": trial, "tear": split}
+    checks.append({"check": "punched_two_tickets_total_12", "ok": trial["total_paid"] == 12, "expected": 12, "actual": trial["total_paid"]})
+    checks.append({"check": "punched_tear_is_single_vertical_cut", "ok": [s["kind"] for s in split["steps"]] == ["V"], "expected": ["V"], "actual": [s["kind"] for s in split["steps"]]})
+
+    committed = svc.commit_group("paper-punched", {"jia": "P-jia", "yi": "P-yi"})
+    out["committed"] = committed
+    jia = svc.get_sale("P-jia")
+    yi = svc.get_sale("P-yi")
+    out["sales"] = {"P-jia": jia, "P-yi": yi}
+    checks.append({
+        "check": "commit_registers_two_sales_per_original_quotes",
+        "ok": jia["total"] == 6 and yi["total"] == 6 and jia["units"][0]["paid"] == 6 and yi["units"][0]["paid"] == 6,
+        "expected": {"P-jia": 6, "P-yi": 6},
+        "actual": {"P-jia": jia["total"], "P-yi": yi["total"]},
+    })
+    refund = svc.return_units("paper-ret-jia", "P-jia", ["jx"], {"jx": "RESTOCK"})
+    out["refund"] = refund
+    checks.append({
+        "check": "paper_sale_refunds_original_paid",
+        "ok": refund["refund_total"] == jia["units"][0]["paid"],
+        "expected": jia["units"][0]["paid"],
+        "actual": refund["refund_total"],
+    })
+    checks.append({
+        "check": "commit_consumed_whole_sheet",
+        "ok": svc.get_sheet("punched")["pieces"] == [],
+        "expected": [],
+        "actual": svc.get_sheet("punched")["pieces"],
+    })
+
+    # 2) No middle perforation: only whole back C, total 14.
+    svc = fresh("solid")
+    svc.register_sheet("solid", rows=1, cols=2, perforations=[], tickets=tickets())
+    trial_solid = svc.quote_group("solid", baskets(), request_id="paper-solid")
+    out["solid"] = {"trial": trial_solid}
+    checks.append({"check": "unpunched_only_whole_ticket_total_14", "ok": trial_solid["total_paid"] == 14, "expected": 14, "actual": trial_solid["total_paid"]})
+    try:
+        svc.try_tear("solid", ["A", "B"])
+        solid_tear = None
+    except BasketError as exc:
+        solid_tear = exc.code
+    out["solid"]["tear_error"] = solid_tear
+    checks.append({"check": "unpunched_split_rejected", "ok": solid_tear == "TEAR_INFEASIBLE", "expected": "TEAR_INFEASIBLE", "actual": solid_tear})
+
+    # 3) Cheaper Y (3): B overpriced, keep whole piece for Jia, total 7.
+    trial_cheap = svc.quote_group("solid", baskets(y_price=3), request_id="paper-cheap-y")
+    out["cheap_y"] = {"trial": trial_cheap}
+    checks.append({"check": "cheap_y_whole_piece_total_7", "ok": trial_cheap["total_paid"] == 7, "expected": 7, "actual": trial_cheap["total_paid"]})
+
+    # 4) Two counters: the second commit on used paper is rejected.
+    svc = fresh("race")
+    svc.register_sheet("race", rows=1, cols=2, perforations=["V0,0"], tickets=tickets())
+    svc.quote_group("race-a", baskets(), request_id="paper-race-a")
+    svc.quote_group("race-b", baskets(), request_id="paper-race-b")
+    svc.commit_group("paper-race-a", {"jia": "R-a-jia", "yi": "R-a-yi"})
+    try:
+        svc.commit_group("paper-race-b", {"jia": "R-b-jia", "yi": "R-b-yi"})
+        race_error = None
+    except BasketError as exc:
+        race_error = exc.code
+    out["race"] = {"second_commit_error": race_error}
+    checks.append({"check": "second_counter_on_used_paper_conflicts", "ok": race_error == "PAPER_CONFLICT", "expected": "PAPER_CONFLICT", "actual": race_error})
+
+    # 5) Receipt-time correction unblocks a missed hole.
+    svc = fresh("correction")
+    svc.register_sheet(
+        "fixme",
+        rows=2,
+        cols=2,
+        perforations=["H0,0"],
+        tickets=[
+            {"ticket_id": "bot", "side": "front", "rect": [1, 0, 1, 1], "coupon_id": "bot", "D": 2, "requires": {"X": 1}},
+        ],
+    )
+    try:
+        svc.try_tear("fixme", ["bot"])
+        before_fix = None
+    except BasketError as exc:
+        before_fix = exc.code
+    svc.add_correction("fix-hole", "fixme", ["H0,1"])
+    after_fix = svc.try_tear("fixme", ["bot"])
+    out["correction"] = {"before": before_fix, "after_steps": after_fix["steps"]}
+    checks.append({"check": "receipt_correction_unblocks_tear", "ok": before_fix == "TEAR_INFEASIBLE" and len(after_fix["steps"]) == 1, "expected": "TEAR_INFEASIBLE -> 1 step", "actual": f"{before_fix} -> {len(after_fix['steps'])} steps"})
+
+    out["summary"] = {"checks": len(checks), "passed": sum(1 for c in checks if c["ok"])}
+    return out
+
+
 def run_demo(db_path: str, out_path: str, plan_path: str) -> Dict[str, Any]:
     for suffix in ("", "-wal", "-shm"):
         candidate = Path(db_path + suffix)
@@ -508,6 +637,10 @@ def run_demo(db_path: str, out_path: str, plan_path: str) -> Dict[str, Any]:
         "actual": race_state,
     })
     del final
+
+    results["paper"] = _run_paper_demo(db_path)
+    for check in results["paper"]["checks"]:
+        results["checks"].append(check)
 
     results["summary"] = {
         "checks": len(results["checks"]),
