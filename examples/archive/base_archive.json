@@ -1,0 +1,67 @@
+{
+  "format": "paper-archive/1",
+  "revision": 1,
+  "boxes": [
+    {
+      "box_id": "A",
+      "cost": 1
+    },
+    {
+      "box_id": "B",
+      "cost": 1
+    },
+    {
+      "box_id": "C",
+      "cost": 3
+    }
+  ],
+  "copies": [
+    {
+      "copy_id": "a1",
+      "page_id": "a",
+      "box_id": "A",
+      "accepted": true
+    },
+    {
+      "copy_id": "a2",
+      "page_id": "a",
+      "box_id": "B",
+      "accepted": true
+    },
+    {
+      "copy_id": "b1",
+      "page_id": "b",
+      "box_id": "C",
+      "accepted": true
+    }
+  ],
+  "seal_rules": [
+    {
+      "student_id": "ST1",
+      "record_id": "R1",
+      "sets": [
+        [
+          "a"
+        ]
+      ]
+    },
+    {
+      "student_id": "ST1",
+      "record_id": "R2",
+      "sets": [
+        [
+          "b"
+        ]
+      ]
+    },
+    {
+      "student_id": "ST1",
+      "record_id": "R3",
+      "sets": [
+        [
+          "c"
+        ]
+      ]
+    }
+  ]
+}

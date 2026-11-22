@@ -8,13 +8,21 @@
 | 精确求解器 | `gradaudit.solver.solve` / `gradaudit solve` | 判定整体可行，可行时给出具体分配；不可行时给出各组独立最大点数 |
 | 独立验证器 | `gradaudit.verify.verify_plan[_document]` / `gradaudit verify` | **不调用求解器**，按输入逐条重核一个 `course-allocation/1` 方案 |
 
+在此之上又加了一层**纸档缩编 / 留盒（custody）**组件，它把上述"真实点数与课程候选由原库负责"的约定当作母库，仅在其上建模纸质证据与档案盒：
+
+| 组件 | 入口 | 作用 |
+| --- | --- | --- |
+| 纸档还原 | `gradaudit.archive.parse_archive` / `gradaudit reconstruct` | 对任一组仍可读的盒，还原实际可成立的转入记录 + 逐页证据链 |
+| 保管处留盒优化 | `gradaudit.custody.optimize_custody` / `gradaudit custody` | 在"任一整盒永久不可读"的每种单盒损失下，求最省保管费的留盒名单与逐生方案 |
+
 四个公开 JSON 文档的字段含义即题面合同。目录**只**通过显式 `equivalences` 映射给出候选，绝不按课程名猜测。
 
-材料在 `materials/725/`，演示在 `examples/demo.py`，测试在 `tests/`。
+材料在 `materials/725/`，演示在 `examples/demo.py` 与 `examples/archive_demo.py`，测试在 `tests/`。
 
 ```bash
-python3 -m unittest discover -s tests -v     # 31 个测试
-python3 examples/demo.py                      # 全流程演示
+python3 -m unittest discover -s tests -v     # 69 个测试
+python3 examples/demo.py                      # 目录/求解/验证/审核库全流程
+python3 examples/archive_demo.py              # 纸档还原 + 留盒优化演示
 ```
 
 ---
@@ -173,3 +181,57 @@ python3 -m gradaudit list-candidates 1 X    # 独立列出候选及类别，不�
 `tests/test_gradaudit.py`（31 项）覆盖：候选显式不猜测、点数校验、组数上限；两份合法方案均接受、复用被拒且定位 R1、未知记录/非候选/类别不符/修订不符、点数只从记录读取、未用记录、额外字段；两组争一份、单组够整体不够、多候选与未分配、精确不可行的共享记录；修订冲突、旧修订可查、映射改变可行性；准备-确认-重开、拒收准备不可确认、仅导入新修订也会使确认 stale、外部方案同边界；以及 **200 个随机小实例与暴力枚举的可行性一致性交叉校验**（并校验每个可行解都能被验证器接受）。
 
 规模合同：至 12 份记录、每份至多 3 候选、点数 1..6，均在 `solver.py` 中显式校验。不做排课、GPA 或先修。
+
+---
+
+## 8. 纸档还原 + 保管处留盒（纸档缩编）
+
+母库（目录 / 转入记录 / 要求）仍负责**真实点数与课程候选**；这一层只建模"哪些纸能证明哪条记录"以及"哪只盒值不值得留"。两者通过 `custody/1` 文档组合在一起。
+
+### 纸档合同 `paper-archive/1`
+```json
+{
+  "format": "paper-archive/1", "revision": 1,
+  "boxes":  [{"box_id": "A", "cost": 1}],
+  "copies": [{"copy_id": "a1", "page_id": "a", "box_id": "A",
+              "accepted": true, "voided": false, "variant": ""}],
+  "seal_rules": [{"student_id": "ST1", "record_id": "R1", "sets": [["a"]]}],
+  "conflict_resolutions": {"a": "v1"},
+  "operations": [{"op": "void", "copy_id": "a2"}]
+}
+```
+* **盒** 是不可拆的实物位置，每只带保管费 `cost`；至多 16 只。
+* **副本** 是一页具名页（`page_id`）的经核对实物副本，只在一只盒里；仅当 `accepted` 且未 `voided` 才可用。同一页可有多份副本（分属不同盒）。
+* **原校签章规则** `seal_rules`：每条形如"若干可替代的完整证据套装"，一套中列出的每个具名页缺一不可；不同记录、不同学生可引用同一具名页。所有套装都不可用时该记录不可还原。
+* **重名页号异文冲突**：同名页在两份仍可读、未作废副本上带有不同 `variant` 文本即为冲突，此时该页不可用，除非 `conflict_resolutions` 指定采纳哪个异文。
+* **档案站操作** `operations`：`box`（入盒）、`transfer`（调拨）、`void`（作废）、`restore`（恢复原签封）、`resolve_variant`（定异文）、`seal`/`batch_seal`（整批签封，若目标盒仍含未定异文冲突则**整批拒绝** `BatchAtomicityError`，不部分生效）。
+
+对任一组仍可读的盒，`Archive.reconstruct_for_student` 给出该生**实际可还原**的记录与逐页证据链（每页选一份确定性副本作为见证）。一页有两份副本也只还原同一条记录一次；记录的还原以"是否存在完整套装"为判据。
+
+### 留盒合同 `custody/1`
+```json
+{"format": "custody/1", "archive": { ...paper-archive/1... },
+ "catalog": { ...course-catalog/1... },
+ "students": [{"records": { ... }, "requirements": { ... }}]}
+```
+保管处只决定留哪些盒，保证**全部正常**且**任意一整盒永久不可读**时，每名学生仍能从可还原记录出发，经母库目录独立组成合格方案。各故障情形可改用不同记录与分配。
+* 目标：最小化所留盒的总保管费。
+* 可解时输出 `retained_boxes / total_cost / normal（全正常逐生方案与逐页证据）/ loss_certificates（每只所留盒的缺盒凭单 + 逐生方案）`。
+* 无解时输出：使用**全部盒**仍办不了的学生与损失场景（`normal_failure` 与/或 `loss_failures`）。
+* **空盒也照管**：一只被保留却不含任何可用副本的盒仍占保管费，也仍作为一条单盒损失场景参与检查（见 `review_retention` 对显式名单的核验）。
+
+所有学生共用一并列母库；校内完全没有共用学分——不同学生的记录各自独立（同一外部课程码也互不共享），但**允许不同学生的凭据共用同一张学校证明页**。
+
+每一份输出的方案都是普通 `course-allocation/1`，并已用**独立验证器**对母库逐条复核（`independent_verification`），不因经过保管层而绕过验证。
+
+```bash
+python3 -m gradaudit reconstruct --archive examples/archive/base_archive.json --boxes A  # 指定可读盒
+python3 -m gradaudit custody examples/archive/base.json                          # 0=可解 1=无解
+python3 examples/archive_demo.py                                                  # 三组请求场景 + 多生演示
+```
+
+`examples/archive/` 中的四组固定场景：
+* `base.json` — 页 `a` 有两份合格副本，最省留 A、B（共费 2），坏任一仍可用 `a` 还原同一条记录。
+* `voided_b.json` — 把 B 里的 `a` 副本作废后改留 A、C（共费 4）。
+* `raised_b.json` — 恢复原签封而 B 涨到 5，仍选更省的 A、C（共费 4）。
+* `two_group_infeasible.json` — 一生需两组、逐组单看都够，但只能还原同一条记录，不能毕业；用全部盒仍无解，报告该生与场景。

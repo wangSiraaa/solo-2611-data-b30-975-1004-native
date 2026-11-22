@@ -1,0 +1,85 @@
+{
+  "format": "custody/1",
+  "archive": {
+    "format": "paper-archive/1",
+    "revision": 1,
+    "boxes": [
+      {
+        "box_id": "A",
+        "cost": 1
+      }
+    ],
+    "copies": [
+      {
+        "copy_id": "p1",
+        "page_id": "p",
+        "box_id": "A",
+        "accepted": true
+      }
+    ],
+    "seal_rules": [
+      {
+        "student_id": "ST2",
+        "record_id": "R1",
+        "sets": [
+          [
+            "p"
+          ]
+        ]
+      }
+    ]
+  },
+  "catalog": {
+    "format": "course-catalog/1",
+    "revision": 1,
+    "courses": [
+      {
+        "course_id": "CAB",
+        "categories": [
+          "GA_CAT",
+          "GB_CAT"
+        ]
+      }
+    ],
+    "equivalences": {
+      "EX": [
+        "CAB"
+      ]
+    }
+  },
+  "students": [
+    {
+      "records": {
+        "student_id": "ST2",
+        "revision": 1,
+        "records": [
+          {
+            "record_id": "R1",
+            "external_course": "EX",
+            "points": 3
+          }
+        ]
+      },
+      "requirements": {
+        "request_id": "ST2_REQ",
+        "revision": 1,
+        "groups": [
+          {
+            "group_id": "GA",
+            "allowed_categories": [
+              "GA_CAT"
+            ],
+            "minimum_points": 3
+          },
+          {
+            "group_id": "GB",
+            "allowed_categories": [
+              "GB_CAT"
+            ],
+            "minimum_points": 3
+          }
+        ]
+      }
+    }
+  ]
+}

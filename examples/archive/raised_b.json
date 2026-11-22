@@ -1,0 +1,131 @@
+{
+  "format": "custody/1",
+  "archive": {
+    "format": "paper-archive/1",
+    "revision": 1,
+    "boxes": [
+      {
+        "box_id": "A",
+        "cost": 1
+      },
+      {
+        "box_id": "B",
+        "cost": 5
+      },
+      {
+        "box_id": "C",
+        "cost": 3
+      }
+    ],
+    "copies": [
+      {
+        "copy_id": "a1",
+        "page_id": "a",
+        "box_id": "A",
+        "accepted": true
+      },
+      {
+        "copy_id": "a2",
+        "page_id": "a",
+        "box_id": "B",
+        "accepted": true
+      },
+      {
+        "copy_id": "b1",
+        "page_id": "b",
+        "box_id": "C",
+        "accepted": true
+      }
+    ],
+    "seal_rules": [
+      {
+        "student_id": "ST1",
+        "record_id": "R1",
+        "sets": [
+          [
+            "a"
+          ]
+        ]
+      },
+      {
+        "student_id": "ST1",
+        "record_id": "R2",
+        "sets": [
+          [
+            "b"
+          ]
+        ]
+      },
+      {
+        "student_id": "ST1",
+        "record_id": "R3",
+        "sets": [
+          [
+            "c"
+          ]
+        ]
+      }
+    ]
+  },
+  "catalog": {
+    "format": "course-catalog/1",
+    "revision": 1,
+    "courses": [
+      {
+        "course_id": "LC_G",
+        "categories": [
+          "G"
+        ]
+      }
+    ],
+    "equivalences": {
+      "E1": [
+        "LC_G"
+      ],
+      "E2": [
+        "LC_G"
+      ],
+      "E3": [
+        "LC_G"
+      ]
+    }
+  },
+  "students": [
+    {
+      "records": {
+        "student_id": "ST1",
+        "revision": 1,
+        "records": [
+          {
+            "record_id": "R1",
+            "external_course": "E1",
+            "points": 3
+          },
+          {
+            "record_id": "R2",
+            "external_course": "E2",
+            "points": 3
+          },
+          {
+            "record_id": "R3",
+            "external_course": "E3",
+            "points": 3
+          }
+        ]
+      },
+      "requirements": {
+        "request_id": "ST1_REQ",
+        "revision": 1,
+        "groups": [
+          {
+            "group_id": "G",
+            "allowed_categories": [
+              "G"
+            ],
+            "minimum_points": 3
+          }
+        ]
+      }
+    }
+  ]
+}

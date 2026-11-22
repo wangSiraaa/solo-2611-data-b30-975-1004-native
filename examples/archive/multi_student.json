@@ -1,0 +1,287 @@
+{
+  "format": "custody/1",
+  "archive": {
+    "format": "paper-archive/1",
+    "revision": 1,
+    "boxes": [
+      {
+        "box_id": "SCHOOL",
+        "cost": 2
+      },
+      {
+        "box_id": "SCHOOL2",
+        "cost": 2
+      },
+      {
+        "box_id": "MAJ_A",
+        "cost": 3
+      },
+      {
+        "box_id": "MAJ_A2",
+        "cost": 3
+      },
+      {
+        "box_id": "MAJ_B",
+        "cost": 2
+      },
+      {
+        "box_id": "MAJ_B2",
+        "cost": 2
+      },
+      {
+        "box_id": "ISO",
+        "cost": 4
+      },
+      {
+        "box_id": "ISO2",
+        "cost": 4
+      }
+    ],
+    "copies": [
+      {
+        "copy_id": "cert_s1",
+        "page_id": "cert",
+        "box_id": "SCHOOL"
+      },
+      {
+        "copy_id": "cert_s2",
+        "page_id": "cert",
+        "box_id": "SCHOOL2"
+      },
+      {
+        "copy_id": "a1",
+        "page_id": "pa",
+        "box_id": "MAJ_A"
+      },
+      {
+        "copy_id": "a2",
+        "page_id": "pa",
+        "box_id": "MAJ_A2"
+      },
+      {
+        "copy_id": "b1",
+        "page_id": "pb",
+        "box_id": "MAJ_B"
+      },
+      {
+        "copy_id": "b2",
+        "page_id": "pb",
+        "box_id": "MAJ_B2"
+      },
+      {
+        "copy_id": "i1",
+        "page_id": "iso",
+        "box_id": "ISO"
+      },
+      {
+        "copy_id": "i2",
+        "page_id": "iso",
+        "box_id": "ISO2"
+      }
+    ],
+    "seal_rules": [
+      {
+        "student_id": "SA",
+        "record_id": "SA_GEN",
+        "sets": [
+          [
+            "cert"
+          ]
+        ]
+      },
+      {
+        "student_id": "SA",
+        "record_id": "SA_MAJ",
+        "sets": [
+          [
+            "pa"
+          ]
+        ]
+      },
+      {
+        "student_id": "SB",
+        "record_id": "SB_GEN",
+        "sets": [
+          [
+            "cert"
+          ]
+        ]
+      },
+      {
+        "student_id": "SB",
+        "record_id": "SB_MAJ",
+        "sets": [
+          [
+            "pb"
+          ]
+        ]
+      },
+      {
+        "student_id": "SC",
+        "record_id": "SC_GEN",
+        "sets": [
+          [
+            "cert"
+          ]
+        ]
+      },
+      {
+        "student_id": "SC",
+        "record_id": "SC_ISO",
+        "sets": [
+          [
+            "iso"
+          ]
+        ]
+      }
+    ]
+  },
+  "catalog": {
+    "format": "course-catalog/1",
+    "revision": 1,
+    "courses": [
+      {
+        "course_id": "GEN",
+        "categories": [
+          "GEN"
+        ]
+      },
+      {
+        "course_id": "MAJ",
+        "categories": [
+          "MAJ"
+        ]
+      }
+    ],
+    "equivalences": {
+      "GEN_E": [
+        "GEN"
+      ],
+      "MAJ_A": [
+        "MAJ"
+      ],
+      "MAJ_B": [
+        "MAJ"
+      ],
+      "ISO_E": [
+        "MAJ"
+      ]
+    }
+  },
+  "students": [
+    {
+      "records": {
+        "student_id": "SA",
+        "revision": 1,
+        "records": [
+          {
+            "record_id": "SA_GEN",
+            "external_course": "GEN_E",
+            "points": 3
+          },
+          {
+            "record_id": "SA_MAJ",
+            "external_course": "MAJ_A",
+            "points": 3
+          }
+        ]
+      },
+      "requirements": {
+        "request_id": "SA_REQ",
+        "revision": 1,
+        "groups": [
+          {
+            "group_id": "GEN",
+            "allowed_categories": [
+              "GEN"
+            ],
+            "minimum_points": 3
+          },
+          {
+            "group_id": "MAJ",
+            "allowed_categories": [
+              "MAJ"
+            ],
+            "minimum_points": 3
+          }
+        ]
+      }
+    },
+    {
+      "records": {
+        "student_id": "SB",
+        "revision": 1,
+        "records": [
+          {
+            "record_id": "SB_GEN",
+            "external_course": "GEN_E",
+            "points": 3
+          },
+          {
+            "record_id": "SB_MAJ",
+            "external_course": "MAJ_B",
+            "points": 3
+          }
+        ]
+      },
+      "requirements": {
+        "request_id": "SB_REQ",
+        "revision": 1,
+        "groups": [
+          {
+            "group_id": "GEN",
+            "allowed_categories": [
+              "GEN"
+            ],
+            "minimum_points": 3
+          },
+          {
+            "group_id": "MAJ",
+            "allowed_categories": [
+              "MAJ"
+            ],
+            "minimum_points": 3
+          }
+        ]
+      }
+    },
+    {
+      "records": {
+        "student_id": "SC",
+        "revision": 1,
+        "records": [
+          {
+            "record_id": "SC_GEN",
+            "external_course": "GEN_E",
+            "points": 3
+          },
+          {
+            "record_id": "SC_ISO",
+            "external_course": "ISO_E",
+            "points": 3
+          }
+        ]
+      },
+      "requirements": {
+        "request_id": "SC_REQ",
+        "revision": 1,
+        "groups": [
+          {
+            "group_id": "GEN",
+            "allowed_categories": [
+              "GEN"
+            ],
+            "minimum_points": 3
+          },
+          {
+            "group_id": "MAJ",
+            "allowed_categories": [
+              "MAJ"
+            ],
+            "minimum_points": 3
+          }
+        ]
+      }
+    }
+  ]
+}

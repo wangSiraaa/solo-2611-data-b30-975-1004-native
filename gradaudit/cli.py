@@ -19,6 +19,8 @@ import json
 import sys
 from typing import Any, Optional
 
+from .archive import parse_archive
+from .custody import custody_report
 from .errors import GradAuditError
 from .library import Store
 from .model import parse_catalog, parse_records, parse_requirements, parse_plan
@@ -74,6 +76,22 @@ def cmd_candidates(args) -> int:
         "candidates": catalog.candidates_with_categories(args.external_course),
     })
     return 0
+
+
+def cmd_reconstruct(args) -> int:
+    archive = parse_archive(_load(args.archive))
+    if args.boxes:
+        readable = args.boxes
+    else:
+        readable = list(archive.box_ids())
+    _dump(archive.report(readable))
+    return 0
+
+
+def cmd_custody(args) -> int:
+    report = custody_report(_load(args.file))
+    _dump(report)
+    return 0 if report.get("feasible") else 1
 
 
 # --------------------------------------------------------------------------- #
@@ -193,6 +211,15 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("external_course")
     sp.add_argument("--catalog", required=True)
     sp.set_defaults(func=cmd_candidates)
+
+    sp = sub.add_parser("reconstruct", help="reconstruct records + evidence chains from readable boxes")
+    sp.add_argument("--archive", required=True, help="paper-archive/1 JSON file")
+    sp.add_argument("--boxes", nargs="*", help="readable box ids (default: all)")
+    sp.set_defaults(func=cmd_reconstruct)
+
+    sp = sub.add_parser("custody", help="find the cheapest retention list and all fault certificates")
+    sp.add_argument("file", help="custody/1 JSON file")
+    sp.set_defaults(func=cmd_custody)
 
     # imports
     sp = sub.add_parser("import-catalog", help="import a catalog revision into the library")

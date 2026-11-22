@@ -32,6 +32,24 @@ from .errors import (
     SchemaError,
     VerificationError,
 )
+from .archive import (
+    ARCHIVE_FORMAT,
+    MAX_BOXES,
+    Archive,
+    Box,
+    Copy,
+    EvidencePage,
+    RecordEvidence,
+    parse_archive,
+)
+from .custody import (
+    CUSTODY_FORMAT,
+    CustodyStudent,
+    custody_report,
+    optimize_custody,
+    parse_custody,
+    review_retention,
+)
 from .library import Store
 from .model import (
     Assignment,
@@ -58,6 +76,20 @@ __all__ = [
     "verify_plan",
     "verify_plan_document",
     "VerifyResult",
+    "Archive",
+    "Box",
+    "Copy",
+    "EvidencePage",
+    "RecordEvidence",
+    "parse_archive",
+    "ARCHIVE_FORMAT",
+    "MAX_BOXES",
+    "CustodyStudent",
+    "parse_custody",
+    "optimize_custody",
+    "review_retention",
+    "custody_report",
+    "CUSTODY_FORMAT",
     "Catalog",
     "Records",
     "Requirements",
