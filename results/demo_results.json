@@ -211,6 +211,7 @@
           }
         ],
         "ok": true,
+        "payment_method": "TRANSFER",
         "refund_total": 76,
         "remaining_refundable": [
           "u0",
@@ -271,6 +272,7 @@
           }
         ],
         "ok": true,
+        "payment_method": "TRANSFER",
         "refund_total": 76,
         "remaining_refundable": [
           "u0",
@@ -337,6 +339,217 @@
         "restock_B_delta": 1,
         "successes": 1
       },
+      "ok": true
+    },
+    {
+      "actual": [
+        4,
+        4
+      ],
+      "check": "cash.combo_per_unit_paid_is_four_four",
+      "expected": [
+        4,
+        4
+      ],
+      "ok": true
+    },
+    {
+      "actual": [
+        2,
+        6
+      ],
+      "check": "cash.solo_per_unit_paid_is_two_six",
+      "expected": [
+        2,
+        6
+      ],
+      "ok": true
+    },
+    {
+      "actual": 5,
+      "check": "cash.combo_first_iou_is_five",
+      "expected": 5,
+      "ok": true
+    },
+    {
+      "actual": 0,
+      "check": "cash.solo_first_iou_is_zero",
+      "expected": 0,
+      "ok": true
+    },
+    {
+      "actual": {
+        "combo": 10,
+        "solo": 10
+      },
+      "check": "cash.whole_order_cash_is_ten_in_both",
+      "expected": 10,
+      "ok": true
+    },
+    {
+      "actual": {
+        "cumulative": 8,
+        "first": 4
+      },
+      "check": "cash.exact_ledger_still_integer_cents",
+      "expected": {
+        "cumulative": 8,
+        "first": 4
+      },
+      "ok": true
+    },
+    {
+      "actual": "holds for 0..199",
+      "check": "cash.round5_independent_reference",
+      "expected": "round5(n)=5*((n+2)//5)",
+      "ok": true
+    },
+    {
+      "actual": {
+        "bags": [
+          "BAG-FIVE-1",
+          "BAG-FIVE-2",
+          "BAG-TEN"
+        ],
+        "feasible": true,
+        "freight": 8
+      },
+      "check": "cash.minimum_freight_uses_cheapest_bag_set",
+      "expected": {
+        "bags": [
+          "BAG-FIVE-1",
+          "BAG-FIVE-2",
+          "BAG-TEN"
+        ],
+        "freight": 8
+      },
+      "ok": true
+    },
+    {
+      "actual": {
+        "deliveries": [
+          [
+            "BAG-FIVE-1",
+            "C1"
+          ],
+          [
+            "BAG-FIVE-2",
+            "C1"
+          ],
+          [
+            "BAG-TEN",
+            "C2"
+          ]
+        ],
+        "solo_first_iou": null
+      },
+      "check": "cash.empty_counter_dispatches_bag_for_five_iou",
+      "expected": "BAG-FIVE-1 -> C1; no IOU for solo first receipt",
+      "ok": true
+    },
+    {
+      "actual": {
+        "balances": {},
+        "deliveries": [
+          "DLV-BAG-FIVE-1",
+          "DLV-BAG-FIVE-2",
+          "DLV-BAG-TEN"
+        ],
+        "disbursements": [
+          "DISB-IOU-cash-r-combo-a",
+          "DISB-IOU-cash-r-combo-b",
+          "DISB-IOU-cash-r-solo-b"
+        ],
+        "ok": true,
+        "repeated": false,
+        "total_freight": 8
+      },
+      "check": "cash.plan_application_pays_each_iou_once",
+      "expected": "three IOUs paid once",
+      "ok": true
+    },
+    {
+      "actual": true,
+      "check": "cash.plan_replay_issues_no_more_coins",
+      "expected": true,
+      "ok": true
+    },
+    {
+      "actual": {
+        "deliveries": [],
+        "freight": 0
+      },
+      "check": "cash.pre_held_coin_avoids_dispatch",
+      "expected": {
+        "deliveries": [],
+        "freight": 0
+      },
+      "ok": true
+    },
+    {
+      "actual": false,
+      "check": "cash.late_bag_cannot_rescue_slot_zero_squeeze",
+      "expected": false,
+      "ok": true
+    },
+    {
+      "actual": {
+        "freight": 3,
+        "payments": {
+          "IOU-sq-r10": {
+            "10": 1
+          },
+          "IOU-sq-r5": {
+            "5": 1
+          }
+        }
+      },
+      "check": "cash.exact_search_reserves_five_for_later_iou",
+      "expected": {
+        "IOU-sq-r10": {
+          "10": 1
+        },
+        "IOU-sq-r5": {
+          "5": 1
+        },
+        "freight": 3
+      },
+      "ok": true
+    },
+    {
+      "actual": {
+        "C1": {
+          "5": 1
+        }
+      },
+      "check": "cash.squeeze_final_inventory_one_five_left",
+      "expected": {
+        "C1": {
+          "5": 1
+        }
+      },
+      "ok": true
+    },
+    {
+      "actual": {
+        "cash_due_total": 20,
+        "exact_refund_total": 16,
+        "iou_count": 3,
+        "receipt_count": 4,
+        "zero_due_count": 1
+      },
+      "check": "cash.day_close_recomputes_every_receipt_to_cent",
+      "expected": true,
+      "ok": true
+    },
+    {
+      "actual": {
+        "ok": true,
+        "positive_only": true,
+        "slots": true
+      },
+      "check": "cash.audit_invariants_balances_slots",
+      "expected": true,
       "ok": true
     }
   ],
@@ -730,6 +943,7 @@
           }
         ],
         "ok": true,
+        "payment_method": "TRANSFER",
         "refund_total": 76,
         "remaining_refundable": [
           "u0",
@@ -745,7 +959,9 @@
         "sale_total": 305
       },
       "get_sale_ten": {
+        "counter_id": null,
         "ok": true,
+        "payment_method": "TRANSFER",
         "quote_id": "ten-quote",
         "quote_sig": "8e4abf2259d193ebdb59fcf9209b6e31b65dbdace0a6578eaf71088ea012175f",
         "refunded_total": 76,
@@ -976,7 +1192,9 @@
         }
       },
       "sale_ten": {
+        "counter_id": null,
         "ok": true,
+        "payment_method": "TRANSFER",
         "quote_id": "ten-quote",
         "quote_sig": "8e4abf2259d193ebdb59fcf9209b6e31b65dbdace0a6578eaf71088ea012175f",
         "refunded_total": 76,
@@ -1125,6 +1343,7 @@
           }
         ],
         "ok": true,
+        "payment_method": "TRANSFER",
         "refund_total": 25,
         "remaining_refundable": [
           "a",
@@ -1155,6 +1374,7 @@
           }
         ],
         "ok": true,
+        "payment_method": "TRANSFER",
         "refund_total": 50,
         "remaining_refundable": [
           "a",
@@ -1400,6 +1620,169 @@
       "snapshots": {
         "added": "case-added",
         "before": "case-before"
+      }
+    },
+    "cash_office": {
+      "day_close_totals": {
+        "cash_due_total": 20,
+        "exact_refund_total": 16,
+        "iou_count": 3,
+        "receipt_count": 4,
+        "zero_due_count": 1
+      },
+      "first_day_plan": {
+        "deliveries": [
+          {
+            "bag_id": "BAG-FIVE-1",
+            "coins": {
+              "5": 1
+            },
+            "counter_id": "C1",
+            "freight": 2,
+            "slot": 0
+          },
+          {
+            "bag_id": "BAG-FIVE-2",
+            "coins": {
+              "5": 1
+            },
+            "counter_id": "C1",
+            "freight": 2,
+            "slot": 2
+          },
+          {
+            "bag_id": "BAG-TEN",
+            "coins": {
+              "10": 1
+            },
+            "counter_id": "C2",
+            "freight": 4,
+            "slot": 0
+          }
+        ],
+        "feasible": true,
+        "final_balances": {
+          "C1": {},
+          "C2": {}
+        },
+        "payments": [
+          {
+            "amount": 5,
+            "coins": {
+              "5": 1
+            },
+            "counter_id": "C1",
+            "iou_id": "IOU-cash-r-combo-a",
+            "slot": 0
+          },
+          {
+            "amount": 5,
+            "coins": {
+              "5": 1
+            },
+            "counter_id": "C1",
+            "iou_id": "IOU-cash-r-combo-b",
+            "slot": 2
+          },
+          {
+            "amount": 10,
+            "coins": {
+              "10": 1
+            },
+            "counter_id": "C2",
+            "iou_id": "IOU-cash-r-solo-b",
+            "slot": 2
+          }
+        ],
+        "reason": null,
+        "total_freight": 8,
+        "unpaid_iou_ids": []
+      },
+      "two_quotes": {
+        "combo": {
+          "first": {
+            "cash_before": 0,
+            "cash_cumulative": 5,
+            "cash_due": 5,
+            "counter_id": "C1",
+            "exact_cumulative": 4,
+            "exact_refund": 4,
+            "iou_id": "IOU-cash-r-combo-a",
+            "items": [
+              {
+                "grade": "RESTOCK",
+                "original_paid": 4,
+                "refund": 4,
+                "sku": "A",
+                "unit_id": "a"
+              }
+            ],
+            "receipt_id": "CR-cash-r-combo-a",
+            "slot": 0
+          },
+          "second": {
+            "cash_before": 5,
+            "cash_cumulative": 10,
+            "cash_due": 5,
+            "counter_id": "C1",
+            "exact_cumulative": 8,
+            "exact_refund": 4,
+            "iou_id": "IOU-cash-r-combo-b",
+            "items": [
+              {
+                "grade": "RESTOCK",
+                "original_paid": 4,
+                "refund": 4,
+                "sku": "B",
+                "unit_id": "b"
+              }
+            ],
+            "receipt_id": "CR-cash-r-combo-b",
+            "slot": 2
+          }
+        },
+        "solo": {
+          "first": {
+            "cash_before": 0,
+            "cash_cumulative": 0,
+            "cash_due": 0,
+            "counter_id": "C2",
+            "exact_cumulative": 2,
+            "exact_refund": 2,
+            "iou_id": null,
+            "items": [
+              {
+                "grade": "RESTOCK",
+                "original_paid": 2,
+                "refund": 2,
+                "sku": "A",
+                "unit_id": "a"
+              }
+            ],
+            "receipt_id": "CR-cash-r-solo-a",
+            "slot": 0
+          },
+          "second": {
+            "cash_before": 0,
+            "cash_cumulative": 10,
+            "cash_due": 10,
+            "counter_id": "C2",
+            "exact_cumulative": 8,
+            "exact_refund": 6,
+            "iou_id": "IOU-cash-r-solo-b",
+            "items": [
+              {
+                "grade": "RESTOCK",
+                "original_paid": 6,
+                "refund": 6,
+                "sku": "B",
+                "unit_id": "b"
+              }
+            ],
+            "receipt_id": "CR-cash-r-solo-b",
+            "slot": 2
+          }
+        }
       }
     },
     "concurrent_returns": {
@@ -1719,6 +2102,7 @@
           }
         ],
         "ok": true,
+        "payment_method": "TRANSFER",
         "refund_total": 50,
         "remaining_refundable": [
           "a",
@@ -1730,7 +2114,9 @@
         "sale_total": 120
       },
       "sale": {
+        "counter_id": null,
         "ok": true,
+        "payment_method": "TRANSFER",
         "quote_id": "case-q-added",
         "quote_sig": "5d1f98073180248b8a70d0a72ad571cb9fb8262310466b92274ffbffc84de24f",
         "refunded_total": 0,
@@ -1825,6 +2211,7 @@
         }
       ],
       "ok": true,
+      "payment_method": "TRANSFER",
       "refund_total": 76,
       "remaining_refundable": [
         "u0",
@@ -1862,6 +2249,7 @@
           }
         ],
         "ok": true,
+        "payment_method": "TRANSFER",
         "refund_total": 25,
         "remaining_refundable": [
           "c"
@@ -2827,6 +3215,7 @@
           }
         ],
         "ok": true,
+        "payment_method": "TRANSFER",
         "refund_total": 76,
         "remaining_refundable": [
           "u0",
@@ -2842,7 +3231,9 @@
         "sale_total": 305
       },
       "sale": {
+        "counter_id": null,
         "ok": true,
+        "payment_method": "TRANSFER",
         "quote_id": "ten-quote",
         "quote_sig": "8e4abf2259d193ebdb59fcf9209b6e31b65dbdace0a6578eaf71088ea012175f",
         "refunded_total": 0,
@@ -3083,7 +3474,9 @@
     },
     "two_sales": {
       "S1": {
+        "counter_id": null,
         "ok": true,
+        "payment_method": "TRANSFER",
         "quote_id": "case-q-before",
         "quote_sig": "6ec517df5b4ce00620e10099cd172b134629b1dddc99977d6367211c54c2f00d",
         "refunded_total": 0,
@@ -3133,7 +3526,9 @@
         ]
       },
       "S2": {
+        "counter_id": null,
         "ok": true,
+        "payment_method": "TRANSFER",
         "quote_id": "case-q-added",
         "quote_sig": "5d1f98073180248b8a70d0a72ad571cb9fb8262310466b92274ffbffc84de24f",
         "refunded_total": 0,
@@ -3185,8 +3580,8 @@
     }
   },
   "summary": {
-    "checks": 19,
+    "checks": 36,
     "failed": 0,
-    "passed": 19
+    "passed": 36
   }
 }

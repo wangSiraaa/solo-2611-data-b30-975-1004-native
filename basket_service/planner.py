@@ -13,14 +13,30 @@ Supported ops::
     get_snapshot       snapshot_id
     quote              basket, coupons, request_id, snapshot_id?
     get_quote          request_id
-    register_sale      sale_id, quote_request_id | quote, snapshot_id?
+    register_sale      sale_id, quote_request_id | quote, snapshot_id?,
+                       payment_method?, counter_id?
     get_sale           sale_id
-    return             request_id, sale_id, unit_ids, grade
+    return             request_id, sale_id, unit_ids, grade, slot?
     get_return         request_id
     adjust_inventory   event_id, sku, quantity, bucket
     inventory          skus?
     audit_sales
     audit_inventory
+    register_counter   counter_id
+    opening_balance    event_id, counter_id, denomination, qty
+    register_bag       bag_id, coins, delivers_to, arrival_slot, freight
+    counter_balance    counter_id?
+    list_receipts      sale_id?
+    get_receipt        request_id
+    list_ious          status?
+    get_iou            iou_id
+    plan_day
+    save_plan          plan_id, plan (a $name result of plan_day)
+    get_plan           plan_id
+    apply_plan         plan? | plan_id?
+    pay_iou            iou_id, disbursement_id, coins?
+    audit_cash
+    close_day
 
 Any step may set ``"expect_error": <code>`` (string or list) to assert that the
 operation is rejected with that error code; the transcript then records a
@@ -119,6 +135,10 @@ def _execute(service, step: Mapping[str, Any], env: Mapping[str, Any]) -> Any:
             raise PlanError("register_sale needs quote or quote_request_id", step_index=-1, step=step, transcript=[])
         if "snapshot_id" in step:
             kwargs["snapshot_id"] = step["snapshot_id"]
+        if "payment_method" in step:
+            kwargs["payment_method"] = step["payment_method"]
+        if "counter_id" in step:
+            kwargs["counter_id"] = step["counter_id"]
         return service.register_sale(sale_id, **kwargs)
     if op == "get_sale":
         return service.get_sale(_require(step, "sale_id", op))
@@ -128,6 +148,7 @@ def _execute(service, step: Mapping[str, Any], env: Mapping[str, Any]) -> Any:
             _require(step, "sale_id", op),
             _require(step, "unit_ids", op),
             _require(step, "grade", op),
+            slot=step.get("slot"),
         )
     if op == "get_return":
         return service.get_return(_require(step, "request_id", op))
@@ -144,6 +165,51 @@ def _execute(service, step: Mapping[str, Any], env: Mapping[str, Any]) -> Any:
         return service.audit_sales()
     if op == "audit_inventory":
         return service.audit_inventory()
+    if op == "register_counter":
+        return service.register_counter(_require(step, "counter_id", op))
+    if op == "opening_balance":
+        return service.opening_balance(
+            _require(step, "event_id", op),
+            _require(step, "counter_id", op),
+            _require(step, "denomination", op),
+            _require(step, "qty", op),
+        )
+    if op == "register_bag":
+        return service.register_bag(
+            _require(step, "bag_id", op),
+            _require(step, "coins", op),
+            _require(step, "delivers_to", op),
+            _require(step, "arrival_slot", op),
+            _require(step, "freight", op),
+        )
+    if op == "counter_balance":
+        return service.counter_balance(step.get("counter_id"))
+    if op == "list_receipts":
+        return service.list_receipts(step.get("sale_id"))
+    if op == "get_receipt":
+        return service.get_receipt(_require(step, "request_id", op))
+    if op == "list_ious":
+        return service.list_ious(step.get("status"))
+    if op == "get_iou":
+        return service.get_iou(_require(step, "iou_id", op))
+    if op == "plan_day":
+        return service.plan_day()
+    if op == "save_plan":
+        return service.save_plan(_require(step, "plan_id", op), _require(step, "plan", op))
+    if op == "get_plan":
+        return service.get_plan(_require(step, "plan_id", op))
+    if op == "apply_plan":
+        return service.apply_plan(step.get("plan"), plan_id=step.get("plan_id"))
+    if op == "pay_iou":
+        return service.pay_iou(
+            _require(step, "iou_id", op),
+            _require(step, "disbursement_id", op),
+            step.get("coins"),
+        )
+    if op == "audit_cash":
+        return service.audit_cash()
+    if op == "close_day":
+        return service.close_day()
     raise PlanError(f"unknown op {op!r}", step_index=-1, step=step, transcript=[])
 
 

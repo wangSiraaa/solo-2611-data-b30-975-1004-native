@@ -36,6 +36,7 @@ from .errors import (
     UNKNOWN_SALE,
     BasketError,
 )
+from .cash import PAYMENT_METHODS, CashOffice, require_slot
 from .validation import is_int, require_id, validate_quote_payload
 
 GRADES = ("RESTOCK", "SCRAP")
@@ -90,6 +91,7 @@ def _validate_grade(grade: Any, unit_ids: Sequence[str]) -> Dict[str, str]:
 class AfterSalesLedger:
     def __init__(self, db: Database):
         self.db = db
+        self.cash = CashOffice(db)
 
     # ------------------------------------------------------------------ sale
     def register_sale(
@@ -100,8 +102,20 @@ class AfterSalesLedger:
         quote_id: Optional[str] = None,
         request_id: Optional[str] = None,
         snapshot_id: Optional[str] = None,
+        payment_method: str = "TRANSFER",
+        counter_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         sale_id = require_id(sale_id, INVALID_INPUT, "sale_id")
+        if payment_method not in PAYMENT_METHODS:
+            raise BasketError(
+                INVALID_INPUT,
+                "payment_method must be CASH or TRANSFER",
+                {"payment_method": payment_method},
+            )
+        if payment_method == "CASH":
+            counter_id = require_id(counter_id, INVALID_INPUT, "counter_id (required for CASH sales)")
+        elif counter_id is not None:
+            raise BasketError(INVALID_INPUT, "counter_id is only valid for CASH sales")
         if quote is None:
             identifier = request_id or quote_id
             if identifier is None:
@@ -153,9 +167,17 @@ class AfterSalesLedger:
                         "sale_id already bound to a different complete quote",
                         {"sale_id": sale_id},
                     )
+                if existing["payment_method"] != payment_method or existing["counter_id"] != counter_id:
+                    raise BasketError(
+                        SALE_CONFLICT,
+                        "sale_id already bound to a different payment method or counter",
+                        {"sale_id": sale_id},
+                    )
                 return self._sale_result(conn, sale_id, repeated=True)
+            if payment_method == "CASH":
+                self.cash._require_counter(conn, counter_id)
             conn.execute(
-                "INSERT INTO sales (sale_id, quote_id, snapshot_id, quote_sig, quote_json, total, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO sales (sale_id, quote_id, snapshot_id, quote_sig, quote_json, total, created_at, payment_method, counter_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     sale_id,
                     quote_request_id,
@@ -164,6 +186,8 @@ class AfterSalesLedger:
                     canonical_json(validated),
                     total,
                     utc_now(),
+                    payment_method,
+                    counter_id,
                 ),
             )
             for entry in validated["allocation"]:
@@ -202,6 +226,8 @@ class AfterSalesLedger:
             "snapshot_id": sale["snapshot_id"],
             "quote_sig": sale["quote_sig"],
             "total": sale["total"],
+            "payment_method": sale["payment_method"],
+            "counter_id": sale["counter_id"],
             "units": unit_rows,
             "refunded_total": sum(u["paid"] for u in unit_rows if u["returned"]),
             "remaining_refundable": [u["unit_id"] for u in unit_rows if not u["returned"]],
@@ -215,12 +241,16 @@ class AfterSalesLedger:
         sale_id: str,
         unit_ids: Any,
         grade: Any,
+        *,
+        slot: Any = None,
     ) -> Dict[str, Any]:
         request_id = require_id(request_id, INVALID_INPUT, "request_id")
         sale_id = require_id(sale_id, INVALID_INPUT, "sale_id")
         canonical_units = _validate_unit_ids(unit_ids)
         canonical_grade = _validate_grade(grade, canonical_units)
-        canonical_request = canonical_json({"sale_id": sale_id, "unit_ids": canonical_units, "grade": canonical_grade})
+        canonical_request = canonical_json(
+            {"sale_id": sale_id, "unit_ids": canonical_units, "grade": canonical_grade, "slot": slot}
+        )
 
         with self.db.transaction() as conn:
             existing = conn.execute("SELECT * FROM return_requests WHERE request_id = ?", (request_id,)).fetchone()
@@ -238,6 +268,11 @@ class AfterSalesLedger:
             sale = conn.execute("SELECT * FROM sales WHERE sale_id = ?", (sale_id,)).fetchone()
             if sale is None:
                 raise BasketError(UNKNOWN_SALE, "unknown sale", {"sale_id": sale_id})
+            is_cash_sale = sale["payment_method"] == "CASH"
+            if is_cash_sale:
+                slot = require_slot(slot)
+            elif slot is not None:
+                raise BasketError(INVALID_INPUT, "slot only applies to CASH sales", {"slot": slot})
             rows = {
                 row["unit_id"]: dict(row)
                 for row in conn.execute("SELECT * FROM sale_units WHERE sale_id = ?", (sale_id,)).fetchall()
@@ -306,10 +341,26 @@ class AfterSalesLedger:
                 "refund_total": refund_total,
                 "cumulative_refund": cumulative,
                 "sale_total": sale["total"],
+                "payment_method": sale["payment_method"],
                 "remaining_refundable": remaining,
                 "inventory": self._inventory_snapshot(conn, {item["sku"] for item in per_unit}),
                 "repeated": False,
             }
+            if is_cash_sale:
+                # Exact contract amounts stay in cents; the cash receipt only
+                # moves multiples of five and is written in the same txn so a
+                # refund can never exist without its receipt / IOU.
+                cash_block = self.cash.record_cash_refund(
+                    conn,
+                    request_id=request_id,
+                    sale_id=sale_id,
+                    counter_id=sale["counter_id"],
+                    slot=slot,
+                    items=per_unit,
+                    exact_refund=refund_total,
+                    exact_cumulative=cumulative,
+                )
+                result["cash"] = cash_block
             conn.execute(
                 "INSERT INTO return_requests (request_id, sale_id, canonical_request, result_json, created_at) VALUES (?, ?, ?, ?, ?)",
                 (request_id, sale_id, canonical_request, canonical_json(result), utc_now()),

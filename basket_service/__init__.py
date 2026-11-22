@@ -17,17 +17,19 @@ from typing import Optional
 
 from .db import Database
 from .errors import BasketError
+from .cash import CashOffice
 from .ledger import AfterSalesLedger
 from .quote_service import QuoteService
 
 
 class Service:
-    """Thin façade wiring the quote service and ledger onto one database."""
+    """Thin façade wiring the quote service, ledger and cash office onto one database."""
 
     def __init__(self, path: str = ":memory:", *, busy_timeout_ms: int = 30000):
         self.db = Database(path, busy_timeout_ms=busy_timeout_ms)
         self.quotes = QuoteService(self.db)
         self.ledger = AfterSalesLedger(self.db)
+        self.cash = CashOffice(self.db)
 
     # quote surface -------------------------------------------------------
     def publish_snapshot(self, products=None, coupons=None, *, snapshot_id=None) -> str:
@@ -49,8 +51,8 @@ class Service:
     def get_sale(self, sale_id: str):
         return self.ledger.get_sale(sale_id)
 
-    def return_units(self, request_id: str, sale_id: str, unit_ids, grade):
-        return self.ledger.return_units(request_id, sale_id, unit_ids, grade)
+    def return_units(self, request_id: str, sale_id: str, unit_ids, grade, *, slot=None):
+        return self.ledger.return_units(request_id, sale_id, unit_ids, grade, slot=slot)
 
     def get_return(self, request_id: str):
         return self.ledger.get_return(request_id)
@@ -66,6 +68,60 @@ class Service:
 
     def audit_sales(self):
         return self.ledger.audit_sales()
+
+    # cash office surface --------------------------------------------------
+    def register_counter(self, counter_id: str):
+        return self.cash.register_counter(counter_id)
+
+    def list_counters(self):
+        return self.cash.list_counters()
+
+    def opening_balance(self, event_id: str, counter_id: str, denomination: int, qty: int):
+        return self.cash.opening_balance(event_id, counter_id, denomination, qty)
+
+    def register_bag(self, bag_id: str, coins, delivers_to, arrival_slot, freight):
+        return self.cash.register_bag(bag_id, coins, delivers_to, arrival_slot, freight)
+
+    def list_bags(self):
+        return self.cash.list_bags()
+
+    def counter_balance(self, counter_id=None):
+        return self.cash.counter_balance(counter_id)
+
+    def get_receipt(self, request_id: str):
+        return self.cash.get_receipt(request_id)
+
+    def list_receipts(self, sale_id=None):
+        return self.cash.list_receipts(sale_id)
+
+    def list_ious(self, status=None):
+        return self.cash.list_ious(status)
+
+    def get_iou(self, iou_id: str):
+        return self.cash.get_iou(iou_id)
+
+    def plan_day(self, *, node_budget=None):
+        if node_budget is None:
+            return self.cash.plan_day()
+        return self.cash.plan_day(node_budget=node_budget)
+
+    def save_plan(self, plan_id: str, plan):
+        return self.cash.save_plan(plan_id, plan)
+
+    def get_plan(self, plan_id: str):
+        return self.cash.get_plan(plan_id)
+
+    def apply_plan(self, plan=None, *, plan_id=None):
+        return self.cash.apply_plan(plan, plan_id=plan_id)
+
+    def pay_iou(self, iou_id: str, disbursement_id: str, coins=None):
+        return self.cash.pay_iou(iou_id, disbursement_id, coins)
+
+    def audit_cash(self):
+        return self.cash.audit_cash()
+
+    def close_day(self):
+        return self.cash.close_day()
 
     # cross-cutting -------------------------------------------------------
     def run(self, plan):

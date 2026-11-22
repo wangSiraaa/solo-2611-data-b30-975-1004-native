@@ -49,6 +49,164 @@ def _case_material() -> Dict[str, Any]:
     return {"basket": basket, "before": before, "added": added, "return_request": case["return_request"]}
 
 
+def _cash_sale(svc, *, tag: str, coupon, counter: str, prices=(6, 6)):
+    basket = [
+        {"unit_id": "a", "sku": "A", "price": prices[0]},
+        {"unit_id": "b", "sku": "B", "price": prices[1]},
+    ]
+    products = [{"sku": "A", "price": prices[0]}, {"sku": "B", "price": prices[1]}]
+    snap = svc.publish_snapshot(products, coupon, snapshot_id=f"cash-snap-{tag}")
+    quote = svc.quote(basket, [], f"cash-q-{tag}", snap)
+    svc.register_sale(f"cash-S-{tag}", quote=quote, payment_method="CASH", counter_id=counter)
+    return quote
+
+
+def _check(results, name: str, ok: bool, expected: Any, actual: Any) -> None:
+    results["checks"].append({"check": name, "ok": bool(ok), "expected": expected, "actual": actual})
+
+
+def _run_cash_scenarios(svc, results: Dict[str, Any]) -> Dict[str, Any]:
+    from .cash import round5
+
+    scenario: Dict[str, Any] = {}
+    svc.register_counter("C1")
+    svc.register_counter("C2")
+
+    # 8a. The two real two-unit quotes: basket total 8 in both, but the first
+    # cash IOU is 5 under the combined discount and 0 under the A-only discount.
+    combo_quote = _cash_sale(svc, tag="combo", coupon=[
+        {"coupon_id": "AB", "D": 4, "requires": {"A": 1, "B": 1}}
+    ], counter="C1")
+    solo_quote = _cash_sale(svc, tag="solo", coupon=[
+        {"coupon_id": "AA", "D": 4, "requires": {"A": 1}}
+    ], counter="C2")
+    _check(results, "cash.combo_per_unit_paid_is_four_four",
+           [u["paid"] for u in combo_quote["allocation"]] == [4, 4],
+           [4, 4], [u["paid"] for u in combo_quote["allocation"]])
+    _check(results, "cash.solo_per_unit_paid_is_two_six",
+           [u["paid"] for u in solo_quote["allocation"]] == [2, 6],
+           [2, 6], [u["paid"] for u in solo_quote["allocation"]])
+
+    combo_a = svc.return_units("cash-r-combo-a", "cash-S-combo", ["a"], {"a": "RESTOCK"}, slot=0)
+    combo_b = svc.return_units("cash-r-combo-b", "cash-S-combo", ["b"], {"b": "RESTOCK"}, slot=2)
+    solo_a = svc.return_units("cash-r-solo-a", "cash-S-solo", ["a"], {"a": "RESTOCK"}, slot=0)
+    solo_b = svc.return_units("cash-r-solo-b", "cash-S-solo", ["b"], {"b": "RESTOCK"}, slot=2)
+    scenario["two_quotes"] = {
+        "combo": {"first": combo_a["cash"], "second": combo_b["cash"]},
+        "solo": {"first": solo_a["cash"], "second": solo_b["cash"]},
+    }
+    _check(results, "cash.combo_first_iou_is_five",
+           combo_a["cash"]["cash_due"] == 5 and combo_a["cash"]["iou_id"] == "IOU-cash-r-combo-a",
+           5, combo_a["cash"]["cash_due"])
+    _check(results, "cash.solo_first_iou_is_zero",
+           solo_a["cash"]["cash_due"] == 0 and solo_a["cash"]["iou_id"] is None,
+           0, solo_a["cash"]["cash_due"])
+    combo_total = combo_a["cash"]["cash_due"] + combo_b["cash"]["cash_due"]
+    solo_total = solo_a["cash"]["cash_due"] + solo_b["cash"]["cash_due"]
+    _check(results, "cash.whole_order_cash_is_ten_in_both",
+           combo_total == 10 and solo_total == 10, 10, {"combo": combo_total, "solo": solo_total})
+    _check(results, "cash.exact_ledger_still_integer_cents",
+           combo_a["refund_total"] == 4 and combo_b["cumulative_refund"] == 8,
+           {"first": 4, "cumulative": 8},
+           {"first": combo_a["refund_total"], "cumulative": combo_b["cumulative_refund"]})
+    _check(results, "cash.round5_independent_reference",
+           all(round5(v) == 5 * ((v + 2) // 5) for v in range(0, 200)),
+           "round5(n)=5*((n+2)//5)", "holds for 0..199")
+
+    # 8b. Change cart: sealed bags, whole-bag delivery, minimum freight.
+    # The day's three IOUs need 5 (C1, slot 0), 5 (C1, slot 2) and 10
+    # (C2, slot 2).  Two cheap five-coin bags cover C1; the ten-coin bag
+    # covers C2; an expensive shared bag is registered but never chosen.
+    svc.register_bag("BAG-FIVE-1", {5: 1}, ["C1"], 0, 2)
+    svc.register_bag("BAG-FIVE-2", {5: 1}, ["C1", "C2"], 2, 2)
+    svc.register_bag("BAG-TEN", {10: 1}, ["C1", "C2"], 0, 4)
+    svc.register_bag("BAG-SHARED-EXPENSIVE", {5: 1, 10: 1}, ["C1", "C2"], 0, 9)
+    plan = svc.plan_day()
+    scenario["first_day_plan"] = plan
+    _check(results, "cash.minimum_freight_uses_cheapest_bag_set",
+           plan["feasible"] and plan["total_freight"] == 8
+           and sorted(d["bag_id"] for d in plan["deliveries"]) == ["BAG-FIVE-1", "BAG-FIVE-2", "BAG-TEN"],
+           {"freight": 8, "bags": ["BAG-FIVE-1", "BAG-FIVE-2", "BAG-TEN"]},
+           {"feasible": plan["feasible"], "freight": plan["total_freight"],
+            "bags": sorted(d["bag_id"] for d in plan["deliveries"])})
+    # Dispatch rule from the brief: C1's first IOU (5) forces a car while C2's
+    # first receipt (cash due 0, no IOU) needs nothing at opening.
+    _check(results, "cash.empty_counter_dispatches_bag_for_five_iou",
+           any(d["bag_id"] == "BAG-FIVE-1" and d["counter_id"] == "C1" for d in plan["deliveries"])
+           and solo_a["cash"]["iou_id"] is None,
+           "BAG-FIVE-1 -> C1; no IOU for solo first receipt",
+           {"deliveries": [(d["bag_id"], d["counter_id"]) for d in plan["deliveries"]],
+            "solo_first_iou": solo_a["cash"]["iou_id"]})
+    svc.save_plan("cash-plan-1", plan)
+    applied = svc.apply_plan(plan_id="cash-plan-1")
+    _check(results, "cash.plan_application_pays_each_iou_once",
+           applied["ok"] and {i["iou_id"] for i in svc.list_ious("PAID")} == {
+               "IOU-cash-r-combo-a", "IOU-cash-r-combo-b", "IOU-cash-r-solo-b"},
+           "three IOUs paid once", applied)
+    replay = svc.apply_plan(plan_id="cash-plan-1")
+    _check(results, "cash.plan_replay_issues_no_more_coins",
+           replay["repeated"], True, replay["repeated"])
+
+    held = open_service(":memory:")
+    held.register_counter("C1")
+    held.opening_balance("held-five", "C1", 5, 1)
+    _cash_sale(held, tag="held", coupon=[
+        {"coupon_id": "AB", "D": 4, "requires": {"A": 1, "B": 1}}
+    ], counter="C1")
+    held.return_units("held-r-a", "cash-S-held", ["a"], {"a": "RESTOCK"}, slot=0)
+    held.register_bag("HELD-BAG", {5: 1}, ["C1"], 0, 2)
+    held_plan = held.plan_day()
+    _check(results, "cash.pre_held_coin_avoids_dispatch",
+           held_plan["total_freight"] == 0 and held_plan["deliveries"] == [],
+           {"freight": 0, "deliveries": []},
+           {"freight": held_plan["total_freight"], "deliveries": held_plan["deliveries"]})
+
+    # 8c. 10 then 5: small change must not be squeezed out by the earlier payout.
+    squeeze = open_service(":memory:")
+    squeeze.register_counter("C1")
+    squeeze.opening_balance("squeeze-open", "C1", 5, 2)
+    for sid, price in (("SQ10", 10), ("SQ5", 5)):
+        basket = [{"unit_id": "a", "sku": "A", "price": price}]
+        snap = squeeze.publish_snapshot([{"sku": "A", "price": price}], [], snapshot_id=f"snap-{sid}")
+        q = squeeze.quote(basket, [], f"q-{sid}", snap)
+        squeeze.register_sale(sid, quote=q, payment_method="CASH", counter_id="C1")
+    squeeze.return_units("sq-r10", "SQ10", ["a"], {"a": "RESTOCK"}, slot=0)
+    squeeze.return_units("sq-r5", "SQ5", ["a"], {"a": "RESTOCK"}, slot=1)
+    squeeze.register_bag("SQ-LATE", {10: 1}, ["C1"], 1, 1)
+    late_plan = squeeze.plan_day()
+    _check(results, "cash.late_bag_cannot_rescue_slot_zero_squeeze",
+           late_plan["feasible"] is False, False, late_plan["feasible"])
+    squeeze.register_bag("SQ-EARLY", {10: 1}, ["C1"], 0, 3)
+    early_plan = squeeze.plan_day()
+    paid = {p["iou_id"]: p["coins"] for p in early_plan["payments"]}
+    _check(results, "cash.exact_search_reserves_five_for_later_iou",
+           early_plan["feasible"] and early_plan["total_freight"] == 3
+           and paid.get("IOU-sq-r10") == {10: 1} and paid.get("IOU-sq-r5") == {5: 1},
+           {"freight": 3, "IOU-sq-r10": {10: 1}, "IOU-sq-r5": {5: 1}},
+           {"freight": early_plan["total_freight"], "payments": paid})
+    squeeze.apply_plan(early_plan)
+    _check(results, "cash.squeeze_final_inventory_one_five_left",
+           squeeze.counter_balance() == {"C1": {5: 1}},
+           {"C1": {5: 1}}, squeeze.counter_balance())
+
+    # 8d. Independent re-open of every cash book to the cent.
+    day = svc.close_day()
+    audit = svc.audit_cash()
+    all_recomputed = all(
+        line["exact_refund"] == line["exact_refund_recomputed"]
+        and line["cash_cumulative"] == round5(line["exact_cumulative"])
+        for line in day["receipts"]
+    )
+    _check(results, "cash.day_close_recomputes_every_receipt_to_cent",
+           day["ok"] and all_recomputed, True, day["totals"])
+    _check(results, "cash.audit_invariants_balances_slots",
+           audit["ok"] and audit["slot_uniqueness_ok"] and audit["positive_due_has_iou"],
+           True, {"ok": audit["ok"], "slots": audit["slot_uniqueness_ok"],
+                  "positive_only": audit["positive_due_has_iou"]})
+    scenario["day_close_totals"] = day["totals"]
+    return scenario
+
+
 def run_demo(db_path: str, out_path: str, plan_path: str) -> Dict[str, Any]:
     for suffix in ("", "-wal", "-shm"):
         candidate = Path(db_path + suffix)
@@ -406,7 +564,8 @@ def run_demo(db_path: str, out_path: str, plan_path: str) -> Dict[str, Any]:
         "audit_sales": svc.audit_sales(),
         "audit_inventory": svc.audit_inventory(),
     }
-    del svc
+    # Keep the original handle alive for later scenarios; ``reopened`` proves
+    # independently that state survives a process-level reopen.
     reopened = open_service(db_path)
     results["scenarios"]["after_reopen"] = {
         "get_quote_case": reopened.get_quote("case-q-before"),
@@ -508,6 +667,11 @@ def run_demo(db_path: str, out_path: str, plan_path: str) -> Dict[str, Any]:
         "actual": race_state,
     })
     del final
+
+    # ------------------------------------------------------------------
+    # 8. Cash office: round5 receipts, IOUs and minimum-freight change carts.
+    # ------------------------------------------------------------------
+    results["scenarios"]["cash_office"] = _run_cash_scenarios(svc, results)
 
     results["summary"] = {
         "checks": len(results["checks"]),

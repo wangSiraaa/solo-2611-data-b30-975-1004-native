@@ -184,5 +184,127 @@ class Database:
                 qty INTEGER NOT NULL,
                 PRIMARY KEY (sku, bucket)
             );
+
+            -- Cash office -------------------------------------------------
+            CREATE TABLE IF NOT EXISTS counters (
+                counter_id TEXT PRIMARY KEY,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS cash_bags (
+                bag_id TEXT PRIMARY KEY,
+                coins_json TEXT NOT NULL,
+                delivers_json TEXT NOT NULL,
+                arrival_slot INTEGER NOT NULL,
+                freight INTEGER NOT NULL,
+                created_at TEXT NOT NULL
+            );
+
+            -- Cash receipts: one per original (idempotent) return request on
+            -- a cash sale.  Exact ledger amounts stay integer cents; the cash
+            -- columns only ever hold multiples of five.
+            CREATE TABLE IF NOT EXISTS cash_receipts (
+                seq INTEGER PRIMARY KEY AUTOINCREMENT,
+                receipt_id TEXT NOT NULL UNIQUE,
+                request_id TEXT NOT NULL UNIQUE,
+                sale_id TEXT NOT NULL,
+                counter_id TEXT NOT NULL,
+                slot INTEGER NOT NULL,
+                exact_refund INTEGER NOT NULL,
+                exact_cumulative INTEGER NOT NULL,
+                cash_before INTEGER NOT NULL,
+                cash_cumulative INTEGER NOT NULL,
+                cash_due INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (sale_id) REFERENCES sales(sale_id),
+                FOREIGN KEY (counter_id) REFERENCES counters(counter_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS cash_receipt_items (
+                receipt_id TEXT NOT NULL,
+                unit_id TEXT NOT NULL,
+                sku TEXT NOT NULL,
+                original_paid INTEGER NOT NULL,
+                refund INTEGER NOT NULL,
+                PRIMARY KEY (receipt_id, unit_id),
+                FOREIGN KEY (receipt_id) REFERENCES cash_receipts(receipt_id)
+            );
+
+            -- A cash IOU exists only when a receipt's actual cash is positive.
+            -- One counter can hold at most one IOU per slot.
+            CREATE TABLE IF NOT EXISTS cash_ious (
+                iou_id TEXT PRIMARY KEY,
+                receipt_id TEXT NOT NULL UNIQUE,
+                sale_id TEXT NOT NULL,
+                counter_id TEXT NOT NULL,
+                slot INTEGER NOT NULL,
+                amount INTEGER NOT NULL,
+                status TEXT NOT NULL DEFAULT 'PENDING'
+                    CHECK (status IN ('PENDING', 'PAID')),
+                paid_at TEXT,
+                UNIQUE (counter_id, slot),
+                FOREIGN KEY (receipt_id) REFERENCES cash_receipts(receipt_id),
+                FOREIGN KEY (counter_id) REFERENCES counters(counter_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS cash_office_events (
+                seq INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_type TEXT NOT NULL
+                    CHECK (event_type IN ('OPENING', 'BAG_DELIVERY', 'DISBURSEMENT')),
+                counter_id TEXT NOT NULL,
+                denomination INTEGER NOT NULL,
+                delta INTEGER NOT NULL,
+                source_id TEXT NOT NULL,
+                iou_id TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (counter_id) REFERENCES counters(counter_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS cash_office_balances (
+                counter_id TEXT NOT NULL,
+                denomination INTEGER NOT NULL,
+                qty INTEGER NOT NULL,
+                PRIMARY KEY (counter_id, denomination),
+                FOREIGN KEY (counter_id) REFERENCES counters(counter_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS disbursements (
+                disbursement_id TEXT PRIMARY KEY,
+                iou_id TEXT NOT NULL UNIQUE,
+                counter_id TEXT NOT NULL,
+                amount INTEGER NOT NULL,
+                coins_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (iou_id) REFERENCES cash_ious(iou_id),
+                FOREIGN KEY (counter_id) REFERENCES counters(counter_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS bag_deliveries (
+                delivery_id TEXT PRIMARY KEY,
+                bag_id TEXT NOT NULL UNIQUE,
+                counter_id TEXT NOT NULL,
+                slot INTEGER NOT NULL,
+                freight INTEGER NOT NULL,
+                coins_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (bag_id) REFERENCES cash_bags(bag_id),
+                FOREIGN KEY (counter_id) REFERENCES counters(counter_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS day_plans (
+                plan_id TEXT PRIMARY KEY,
+                plan_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
             """
         )
+        self._migrate(conn)
+
+    def _migrate(self, conn: sqlite3.Connection) -> None:
+        """Add the cash columns to sales databases created by older versions."""
+
+        existing = {row["name"] for row in conn.execute("PRAGMA table_info(sales)").fetchall()}
+        if "payment_method" not in existing:
+            conn.execute("ALTER TABLE sales ADD COLUMN payment_method TEXT NOT NULL DEFAULT 'TRANSFER'")
+        if "counter_id" not in existing:
+            conn.execute("ALTER TABLE sales ADD COLUMN counter_id TEXT")
