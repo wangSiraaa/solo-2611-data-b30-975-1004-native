@@ -46,6 +46,8 @@ from .model import (
     parse_records,
     parse_requirements,
 )
+from .resign import ReissueOption, ReissueResult, reissue_options
+from .batch import BatchResult, Package, schedule_batch, schedule_packages
 from .solver import MasterResult, GroupOutcome, solve, single_group_max
 from .verify import VerifyResult, verify_plan, verify_plan_document
 
@@ -58,6 +60,13 @@ __all__ = [
     "verify_plan",
     "verify_plan_document",
     "VerifyResult",
+    "reissue_options",
+    "ReissueOption",
+    "ReissueResult",
+    "schedule_batch",
+    "schedule_packages",
+    "Package",
+    "BatchResult",
     "Catalog",
     "Records",
     "Requirements",

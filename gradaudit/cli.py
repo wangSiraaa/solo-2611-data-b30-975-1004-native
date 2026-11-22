@@ -22,6 +22,8 @@ from typing import Any, Optional
 from .errors import GradAuditError
 from .library import Store
 from .model import parse_catalog, parse_records, parse_requirements, parse_plan
+from .resign import reissue_options
+from .batch import schedule_batch
 from .solver import solve
 from .verify import verify_plan, verify_plan_document
 
@@ -164,6 +166,66 @@ def cmd_points(args) -> int:
     return 0
 
 
+def _load_advisor_map(path: str) -> dict:
+    doc = _load(path)
+    # Accept either {"advisor_of": {...}} or a bare {record_id: advisor} map.
+    if isinstance(doc, dict) and isinstance(doc.get("advisor_of"), dict):
+        return dict(doc["advisor_of"])
+    if isinstance(doc, dict):
+        return dict(doc)
+    raise GradAuditError("advisor map must be a JSON object", location="advisors")
+
+
+def _reissue_from_files(args):
+    catalog = parse_catalog(_load(args.catalog))
+    records = parse_records(_load(args.records))
+    requirements = parse_requirements(_load(args.requirements))
+    advisor_of = _load_advisor_map(args.advisors)
+    return reissue_options(_load(args.plan), catalog, records, requirements, advisor_of), requirements
+
+
+def cmd_reissue(args) -> int:
+    result, _ = _reissue_from_files(args)
+    _dump(result.as_dict())
+    return 0 if result.options else 1
+
+
+def cmd_schedule(args) -> int:
+    result, _ = _reissue_from_files(args)
+    doc = _load(args.price)
+    prices = {k: v for k, v in doc.get("price", {}).items()}
+    batch = schedule_batch(
+        {result.student_id: result},
+        price=prices,
+        fixed_attendees=doc.get("fixed_attendees", []),
+        companion_groups=doc.get("companion_groups", []),
+        incompatible_pairs=doc.get("incompatible_pairs", []),
+    )
+    _dump(batch.as_dict())
+    return 0 if batch.feasible else 1
+
+
+def cmd_set_advisors(args) -> int:
+    with _store(args) as store:
+        store.set_advisor_assignments(request_id=args.request,
+                                      advisor_of=_load_advisor_map(args.advisors))
+        _dump({"request_id": args.request,
+               "advisor_of": store.advisor_assignments(args.request)})
+    return 0
+
+
+def cmd_reissue_db(args) -> int:
+    with _store(args) as store:
+        result = store.reissue(
+            request_id=args.request,
+            catalog_revision=args.catalog_revision,
+            records_revision=args.records_revision,
+            requirements_revision=args.requirements_revision,
+        )
+        _dump(result.as_dict())
+        return 0 if result.options else 1
+
+
 # --------------------------------------------------------------------------- #
 # parser
 # --------------------------------------------------------------------------- #
@@ -252,6 +314,39 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("preparation_id")
     sp.add_argument("--db", default="gradaudit.sqlite3")
     sp.set_defaults(func=cmd_points)
+
+    # re-issue / batch scheduling
+    sp = sub.add_parser("reissue", help="minimal consenting-advisor sets for a re-issue")
+    sp.add_argument("--plan", required=True, help="old confirmed course-allocation/1 plan")
+    sp.add_argument("--advisors", required=True, help="JSON {record_id: advisor} or {advisor_of: {...}}")
+    sp.add_argument("--catalog", required=True, help="NEW course-catalog/1 JSON")
+    sp.add_argument("--records", required=True, help="NEW student records JSON")
+    sp.add_argument("--requirements", required=True, help="NEW requirements JSON")
+    sp.set_defaults(func=cmd_reissue)
+
+    sp = sub.add_parser("schedule", help="optimise one registrar signing round (cost)")
+    sp.add_argument("--plan", required=True, help="old confirmed course-allocation/1 plan")
+    sp.add_argument("--advisors", required=True, help="JSON {record_id: advisor}")
+    sp.add_argument("--catalog", required=True, help="NEW course-catalog/1 JSON")
+    sp.add_argument("--records", required=True, help="NEW student records JSON")
+    sp.add_argument("--requirements", required=True, help="NEW requirements JSON")
+    sp.add_argument("--price", required=True,
+                    help="JSON {price:{advisor:cost}, fixed_attendees, companion_groups, incompatible_pairs}")
+    sp.set_defaults(func=cmd_schedule)
+
+    sp = sub.add_parser("set-advisors", help="record each used record's responsible advisor")
+    sp.add_argument("--request", required=True)
+    sp.add_argument("--advisors", required=True, help="JSON {record_id: advisor}")
+    sp.add_argument("--db", default="gradaudit.sqlite3")
+    sp.set_defaults(func=cmd_set_advisors)
+
+    sp = sub.add_parser("reissue-db", help="re-issue from the live confirmation, using new revisions")
+    sp.add_argument("--request", required=True)
+    sp.add_argument("--catalog-revision", type=int, required=True)
+    sp.add_argument("--records-revision", type=int, required=True)
+    sp.add_argument("--requirements-revision", type=int, required=True)
+    sp.add_argument("--db", default="gradaudit.sqlite3")
+    sp.set_defaults(func=cmd_reissue_db)
 
     return p
 

@@ -7,13 +7,15 @@
 | 课程等价目录 + 审核库 | `gradaudit.Store` / `python -m gradaudit ...` | SQLite 持久化目录、转入记录、要求、准备/确认/重开 |
 | 精确求解器 | `gradaudit.solver.solve` / `gradaudit solve` | 判定整体可行，可行时给出具体分配；不可行时给出各组独立最大点数 |
 | 独立验证器 | `gradaudit.verify.verify_plan[_document]` / `gradaudit verify` | **不调用求解器**，按输入逐条重核一个 `course-allocation/1` 方案 |
+| 改签测算 | `gradaudit.reissue_options` / `gradaudit reissue` | 从已确认旧方案求出所有极小同意人组合及各自新方案 |
+| 签字排期 | `gradaudit.schedule_batch` / `gradaudit schedule` | 按出席人头计费，最优安排一轮集中签字 |
 
 四个公开 JSON 文档的字段含义即题面合同。目录**只**通过显式 `equivalences` 映射给出候选，绝不按课程名猜测。
 
 材料在 `materials/725/`，演示在 `examples/demo.py`，测试在 `tests/`。
 
 ```bash
-python3 -m unittest discover -s tests -v     # 31 个测试
+python3 -m unittest discover -s tests -v     # 58 个测试
 python3 examples/demo.py                      # 全流程演示
 ```
 
@@ -168,8 +170,47 @@ python3 -m gradaudit list-candidates 1 X    # 独立列出候选及类别，不�
 
 ---
 
-## 7. 测试覆盖
+## 7. 改签测算与签字排期
+
+改签从**已确认**的审核方案出发：旧确认里每条已用记录的 `record_id/course_id/group_id`
+去向被钉死，由该记录的负责导师签字后才能改课程、改归组或改为不用。未被旧方案用到的记录
+无需同意即可启用。新方案整体仍走 `verify.verify_plan`（新修订下的原独立验证器）。
+
+```python
+from gradaudit import reissue_options, schedule_batch
+
+# advisor_of: 旧确认中每条已用记录 -> 负责导师（同一导师只算一次）
+res = reissue_options(old_confirmed_plan_doc, new_catalog, new_records, new_requirements,
+                      advisor_of={"R1": "梅", "R2": "兰"})
+res.options          # 所有“包含意义下极小”的同意人组合，各带一份可验证的新方案
+res.full_consent_feasible   # False 表示即使全同意也无法换发（res.note 说明）
+```
+
+```python
+# 学籍处按一轮集中安排签字：每名导师到场一次可为多名学生签；
+# 费用按出席人头 × price；支持 fixed_attendees / companion_groups / incompatible_pairs。
+batch = schedule_batch({"S1": res1, "S2": res2}, price={"梅": 2, "兰": 3, "竹": 2},
+                       companion_groups=[["兰", "竹"]])
+batch.feasible, batch.total_cost, batch.attendees, batch.assignments[sid]["plan"]
+```
+
+* 极小组合的判定是单调的（多加同意只会放宽约束），因此按大小扫描并对已知极小集跳过超集；
+  规模合同内可枚举。
+* 批次优化枚举 ≤16 名导师的全部到场子集，取满足“每生至少一组同意人到齐”的最小费用；
+  同名组合去重，等费方案允许任一。若某生日程上无可用组合、或固定/同行/互斥约束互相冲突，
+  整批 `feasible=False` 并逐生报告冲突——**测算绝不冒作换发**。
+* `Store.reissue(...)` 强制从 `confirmation_status` 为 `confirmed` 的旧方案出发；stale 或仅
+  prepare 未确认都被拒绝。`Store.set_advisor_assignments` 记录负责导师。
+
+CLI：`reissue` / `schedule`（文件输入），`set-advisors` / `reissue-db`（SQLite 库）。
+
+---
+
+## 8. 测试覆盖
 
 `tests/test_gradaudit.py`（31 项）覆盖：候选显式不猜测、点数校验、组数上限；两份合法方案均接受、复用被拒且定位 R1、未知记录/非候选/类别不符/修订不符、点数只从记录读取、未用记录、额外字段；两组争一份、单组够整体不够、多候选与未分配、精确不可行的共享记录；修订冲突、旧修订可查、映射改变可行性；准备-确认-重开、拒收准备不可确认、仅导入新修订也会使确认 stale、外部方案同边界；以及 **200 个随机小实例与暴力枚举的可行性一致性交叉校验**（并校验每个可行解都能被验证器接受）。
 
-规模合同：至 12 份记录、每份至多 3 候选、点数 1..6，均在 `solver.py` 中显式校验。不做排课、GPA 或先修。
+`tests/test_reissue.py`（27 项）覆盖改签与排期：极小同意人集合、未同意去向保留、重复导师只列一次、未用记录免签、旧去向非法时强制签字、全同意仍不可行、身份不变；排期的单兰一次(3)、撤映射后梅+竹(4)、同行兰竹(5)、固定人员计费、互斥导致整批办不了、等费方案、缺价拒收。
+
+规模合同：至 12 份记录、每份至多 3 候选、点数 1..6，均在 `solver.py` 中显式校验；批次至 16 名导师、40 名学生。不做排课、GPA 或先修。
+

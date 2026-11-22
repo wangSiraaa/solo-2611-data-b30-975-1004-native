@@ -237,6 +237,14 @@ class Store:
                 detail_json TEXT NOT NULL,
                 at TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS advisor_assignments (
+                request_id TEXT NOT NULL,
+                subject_key TEXT NOT NULL,
+                record_id TEXT NOT NULL,
+                advisor TEXT NOT NULL,
+                PRIMARY KEY (request_id, subject_key, record_id)
+            );
             """
         )
         self.conn.commit()
@@ -843,3 +851,110 @@ class Store:
             (request_id, self.subject_key),
         ).fetchall()
         return [dict(r) for r in rows]
+
+    # =====================================================================
+    # re-issue (改签): from a *confirmed* audit, who must sign?
+    # =====================================================================
+    def set_advisor_assignments(self, *, request_id: str, advisor_of: Dict[str, str]) -> None:
+        """Record the responsible advisor of each record used by a request.
+
+        Later re-issue analysis only asks advisors of records the *confirmed*
+        plan actually used; unused records need no consent to be activated.
+        """
+        for rid, advisor in advisor_of.items():
+            if not isinstance(rid, str) or not rid.strip():
+                raise SchemaError("record_id must be a non-empty string", location="advisor_of")
+            if not isinstance(advisor, str) or not advisor.strip():
+                raise SchemaError(f"advisor for record {rid!r} must be a non-empty string", location=rid)
+        with self._txn():
+            self.conn.execute(
+                "DELETE FROM advisor_assignments WHERE request_id = ? AND subject_key = ?",
+                (request_id, self.subject_key),
+            )
+            for rid, advisor in advisor_of.items():
+                self.conn.execute(
+                    "INSERT INTO advisor_assignments(request_id, subject_key, record_id, advisor) VALUES (?,?,?,?)",
+                    (request_id, self.subject_key, rid, advisor),
+                )
+            self._event(request_id, "advisors_set", {"advisor_of": dict(sorted(advisor_of.items()))})
+
+    def advisor_assignments(self, request_id: str) -> Dict[str, str]:
+        rows = self.conn.execute(
+            "SELECT record_id, advisor FROM advisor_assignments WHERE request_id = ? AND subject_key = ?",
+            (request_id, self.subject_key),
+        ).fetchall()
+        return {r["record_id"]: r["advisor"] for r in rows}
+
+    def confirmed_plan(self, request_id: str) -> Plan:
+        """The plan behind the live confirmation; refuses drafts and stale rows.
+
+        A re-issue must start from a *genuinely confirmed* audit, not a
+        preparation.  If the confirmation has gone stale (catalog / records /
+        requirements moved), the caller must re-prepare and re-confirm first --
+        a stale confirmation must never be presented as the current one.
+        """
+        status = self.confirmation_status(request_id)
+        if not status["confirmed"]:
+            reason = "stale" if status.get("stale") else status.get("reason", "no live confirmation")
+            raise ConfirmationError(
+                f"cannot re-issue request {request_id!r}: confirmation is not current ({reason}); "
+                f"re-prepare and re-confirm first",
+                location=request_id,
+                detail=status.get("stale"),
+            )
+        row = self.conn.execute(
+            "SELECT plan_json FROM audit_confirmations WHERE confirmation_id = ?",
+            (status["confirmation_id"],),
+        ).fetchone()
+        assert row is not None
+        return parse_plan(json.loads(row["plan_json"]))
+
+    def reissue(
+        self,
+        *,
+        request_id: str,
+        catalog_revision: int,
+        records_revision: int,
+        requirements_revision: int,
+    ):
+        """Enumerate minimal consenting-advisor sets against the new revisions.
+
+        The old destinations come from the live confirmation (never a draft),
+        and the new plan must pass the new revision's original independent
+        verifier.  Advisors come from :meth:`set_advisor_assignments`.
+        """
+        from .resign import reissue_options  # local import avoids a cycle
+
+        catalog = self.get_catalog(catalog_revision)
+        records = self.get_records(records_revision)
+        requirements = self.get_requirements(requirements_revision)
+        if catalog is None or records is None or requirements is None:
+            raise RevisionNotFoundError(
+                "re-issue requires the new catalog / records / requirements to be imported",
+                location="revisions",
+            )
+        if requirements.request_id != request_id:
+            raise SchemaError(
+                f"requirements revision {requirements_revision} belongs to request "
+                f"{requirements.request_id!r}, not {request_id!r}",
+                location="request_id",
+            )
+        old_plan = self.confirmed_plan(request_id)
+        if old_plan.student_id != records.student_id:
+            raise SchemaError(
+                f"old confirmed plan student {old_plan.student_id!r} != records student "
+                f"{records.student_id!r}; re-issue must keep the confirmed identity",
+                location="student_id",
+            )
+        advisor_of = self.advisor_assignments(request_id)
+        result = reissue_options(old_plan, catalog, records, requirements, advisor_of)
+        with self._txn():
+            self._event(request_id, "reissue_analysed", {
+                "catalog_revision": catalog_revision,
+                "records_revision": records_revision,
+                "requirements_revision": requirements_revision,
+                "minimal_consent_sets": [o.advisors_sorted for o in result.options],
+                "full_consent_feasible": result.full_consent_feasible,
+            })
+        return result
+
