@@ -27,6 +27,9 @@ from datetime import datetime, timezone
 from typing import Any, Iterable, Sequence
 
 from . import catalog
+from . import handover as handover_mod
+from . import routing as routing_mod
+from .routing import Desk
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -94,6 +97,58 @@ CREATE TABLE IF NOT EXISTS products (
     created_at       TEXT NOT NULL,
     payload          TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS desk_registry_commits (
+    registry_revision TEXT PRIMARY KEY,
+    parent_revision   TEXT,
+    request_id        TEXT,
+    created_seq       INTEGER NOT NULL,
+    catalog_revision  TEXT NOT NULL,
+    fact_revision     TEXT NOT NULL,
+    fact_watermark    INTEGER NOT NULL,
+    desks             TEXT NOT NULL,
+    explanation       TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS desk_registry (
+    desk_id TEXT PRIMARY KEY,
+    node_id TEXT NOT NULL,
+    name    TEXT NOT NULL,
+    revision TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS routing_signoffs (
+    signoff_id        TEXT PRIMARY KEY,
+    request_id        TEXT,
+    created_seq       INTEGER NOT NULL,
+    catalog_revision  TEXT NOT NULL,
+    fact_revision     TEXT NOT NULL,
+    fact_watermark    INTEGER NOT NULL,
+    registry_revision TEXT NOT NULL,
+    payload           TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS rosters (
+    roster_id        TEXT PRIMARY KEY,
+    request_id       TEXT,
+    created_seq      INTEGER NOT NULL,
+    description      TEXT,
+    catalog_revision TEXT NOT NULL,
+    fact_revision    TEXT NOT NULL,
+    fact_watermark   INTEGER NOT NULL,
+    quotas           TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS handover_signoffs (
+    signoff_id        TEXT PRIMARY KEY,
+    roster_id         TEXT NOT NULL,
+    request_id        TEXT,
+    created_seq       INTEGER NOT NULL,
+    status            TEXT NOT NULL,
+    catalog_revision  TEXT NOT NULL,
+    fact_revision     TEXT NOT NULL,
+    fact_watermark    INTEGER NOT NULL,
+    registry_revision TEXT NOT NULL,
+    total_workhours   INTEGER,
+    stack             TEXT NOT NULL,
+    plan              TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS handover_roster ON handover_signoffs (roster_id, created_seq);
 """
 
 
@@ -119,6 +174,14 @@ class ConflictError(StoreError):
 
 class ProductError(StoreError):
     """Product lookup/immutability failure."""
+
+
+class RoutingError(StoreError):
+    """Desk registry or routing validation failure."""
+
+
+class HandoverError(StoreError):
+    """Roster or handover plan validation failure."""
 
 
 @dataclass(frozen=True)
@@ -1623,6 +1686,664 @@ class Store:
             "FROM products ORDER BY created_at, product_id"
         ).fetchall()
         return [dict(row) for row in rows]
+
+    # ---------------------------------------------------- desk registry & routing
+    def registry_revision(self) -> str | None:
+        return self._meta("desk_registry_revision")
+
+    def _registry_counter(self) -> int:
+        return self._meta_int("desk_registry_counter", 0)
+
+    def load_desk_registry(self, revision: str | None = None) -> list[Desk]:
+        """Registered desks, either live or at one registry revision."""
+
+        if revision is not None:
+            row = self.conn.execute(
+                "SELECT desks FROM desk_registry_commits WHERE registry_revision=?",
+                (revision,),
+            ).fetchone()
+            if row is None:
+                raise RoutingError(f"unknown registry revision {revision!r}")
+            return [Desk.from_dict(raw) for raw in json.loads(row["desks"])]
+        rows = self.conn.execute(
+            "SELECT desk_id, node_id, name FROM desk_registry ORDER BY desk_id"
+        ).fetchall()
+        return [Desk(r["desk_id"], r["node_id"], r["name"]) for r in rows]
+
+    def register_desks(
+        self,
+        raw_desks: Sequence[dict[str, Any]],
+        *,
+        request_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Publish a full desk-registry snapshot at the current catalog cut.
+
+        The registry is versioned independently (``D<n>``); each commit records
+        the catalog/fact cut against which its node ids were validated, so an
+        old routing verdict stays reproducible with the registry it was signed
+        on. An unchanged snapshot is a no-op and creates no new revision.
+        """
+
+        payload_hash = _sha({"kind": "desk-registry", "desks": raw_desks})
+        request_id = request_id or "auto-" + payload_hash[:16]
+        existing = self._event_for(request_id)
+        if existing is not None:
+            details = json.loads(existing["details"])
+            if details.get("payload_hash") not in (None, payload_hash):
+                raise ConflictError(
+                    f"request_id {request_id!r} already committed with different content"
+                )
+            revision = details["registry_revision"]
+            # A no-op event references the parent revision; only real commits
+            # have their own row in desk_registry_commits.
+            desks = self.load_desk_registry(
+                None if details.get("noop") else revision
+            )
+            return {
+                "registry_revision": revision,
+                "cut": Cut(
+                    details["catalog_revision"],
+                    details["fact_revision"],
+                    int(details["fact_watermark"]),
+                ).as_dict(),
+                "noop": bool(details.get("noop")),
+                "desks": [d.as_dict() for d in desks],
+            }
+
+        try:
+            desks = routing_mod.normalise_desks(raw_desks)
+        except ValueError as exc:
+            raise RoutingError(str(exc)) from exc
+
+        with self._write_lock, _Transaction(self.conn):
+            seq = self._next_seq()
+            cut = self.current_cut()
+            state = self.load_catalog_state(cut.catalog_revision)
+            for desk in desks:
+                if desk.node_id not in state.nodes:
+                    raise RoutingError(
+                        f"desk {desk.desk_id!r} registered on unknown node {desk.node_id!r}"
+                    )
+            current = self.load_desk_registry()
+            current_key = {(d.desk_id, d.node_id, d.name) for d in current}
+            new_key = {(d.desk_id, d.node_id, d.name) for d in desks}
+            if current_key == new_key:
+                details = {
+                    "payload_hash": payload_hash,
+                    "registry_revision": self.registry_revision() or "D0",
+                    "catalog_revision": cut.catalog_revision,
+                    "fact_revision": cut.fact_revision,
+                    "fact_watermark": cut.fact_watermark,
+                    "noop": True,
+                    "warnings": ["desk registry unchanged; no new revision"],
+                }
+                self._record_event(seq, request_id, "desk_registry", details)
+                return {
+                    "registry_revision": self.registry_revision() or "D0",
+                    "cut": cut.as_dict(),
+                    "noop": True,
+                    "desks": [d.as_dict() for d in current],
+                }
+
+            counter = self._registry_counter() + 1
+            revision = f"D{counter}"
+            explanation = {
+                "operation": "desk-registry",
+                "request_id": request_id,
+                "registry_revision": revision,
+                "parent_revision": self.registry_revision(),
+                "payload_hash": payload_hash,
+            }
+            self.conn.execute(
+                "INSERT INTO desk_registry_commits"
+                "(registry_revision, parent_revision, request_id, created_seq, "
+                "catalog_revision, fact_revision, fact_watermark, desks, explanation)"
+                " VALUES(?,?,?,?,?,?,?,?,?)",
+                (
+                    revision,
+                    self.registry_revision(),
+                    request_id,
+                    seq,
+                    cut.catalog_revision,
+                    cut.fact_revision,
+                    cut.fact_watermark,
+                    _json_dump([d.as_dict() for d in desks]),
+                    _json_dump(explanation),
+                ),
+            )
+            self.conn.execute("DELETE FROM desk_registry")
+            for desk in desks:
+                self.conn.execute(
+                    "INSERT INTO desk_registry(desk_id, node_id, name, revision) "
+                    "VALUES(?,?,?,?)",
+                    (desk.desk_id, desk.node_id, desk.name, revision),
+                )
+            self._set_meta("desk_registry_revision", revision)
+            self._set_meta("desk_registry_counter", str(counter))
+            self._record_event(
+                seq,
+                request_id,
+                "desk_registry",
+                {**explanation, **cut.as_dict(), "payload_hash": payload_hash, "noop": False},
+            )
+        return {
+            "registry_revision": revision,
+            "cut": cut.as_dict(),
+            "noop": False,
+            "desks": [d.as_dict() for d in desks],
+        }
+
+    def _load_ticket_views(self, snapshot: Cut | None) -> list[dict[str, Any]]:
+        """Ticket views (including the withdrawn flag) at a cut."""
+
+        if snapshot is None:
+            rows = self.conn.execute(
+                "SELECT ticket_id, classes, active FROM tickets ORDER BY ticket_id"
+            ).fetchall()
+            return [
+                {
+                    "ticket_id": r["ticket_id"],
+                    "classes": json.loads(r["classes"]),
+                    "active": int(r["active"]) == 1,
+                }
+                for r in rows
+            ]
+        if snapshot.fact_watermark == 0:
+            return []
+        resolved = self._watermark_seq(snapshot.fact_watermark)
+        if resolved is None:
+            raise ConflictError(f"unknown fact watermark {snapshot.fact_watermark}")
+        seq, revision = resolved
+        if revision != snapshot.fact_revision:
+            raise ConflictError("snapshot fact revision does not match its watermark")
+        rows = self.conn.execute(
+            "SELECT ticket_id, revision, amount, classes, active FROM fact_commits "
+            "WHERE created_seq <= ? ORDER BY commit_id",
+            (seq,),
+        ).fetchall()
+        latest: dict[str, sqlite3.Row] = {}
+        for row in rows:
+            latest[row["ticket_id"]] = row
+        return [
+            {
+                "ticket_id": tid,
+                "classes": json.loads(latest[tid]["classes"]),
+                "active": int(latest[tid]["active"]) == 1,
+            }
+            for tid in sorted(latest)
+        ]
+
+    def routing_checkout(
+        self,
+        ticket_ids: Sequence[str] | None = None,
+        *,
+        snapshot: Cut | None = None,
+        registry_revision: str | None = None,
+    ) -> dict[str, Any]:
+        """Resolve every retainable desk, with evidence, at one pinned cut."""
+
+        with self._write_lock, _ReadTransaction(self.conn):
+            cut = snapshot or self.current_cut()
+            state = self.load_catalog_state(cut.catalog_revision)
+            views = self._load_ticket_views(snapshot)
+            by_id = {view["ticket_id"]: view for view in views}
+            wanted = list(ticket_ids) if ticket_ids is not None else sorted(by_id)
+            unknown = [tid for tid in wanted if tid not in by_id]
+            if unknown:
+                raise RoutingError(f"unknown ticket(s) at this cut: {unknown}")
+            desks = self.load_desk_registry(registry_revision)
+            result = routing_mod.checkout(
+                [by_id[tid] for tid in wanted], desks, state.edges, state.nodes
+            )
+            result["cut"] = cut.as_dict()
+            result["registry_revision"] = registry_revision or self.registry_revision() or "D0"
+            return result
+
+    def sign_routing(
+        self,
+        signoff_id: str,
+        ticket_ids: Sequence[str] | None = None,
+        *,
+        snapshot: Cut | None = None,
+    ) -> dict[str, Any]:
+        """Persist a routing sign-off document, pinned to its cut."""
+
+        payload = self.routing_checkout(ticket_ids, snapshot=snapshot)
+        with self._write_lock, _Transaction(self.conn):
+            existing = self.conn.execute(
+                "SELECT payload FROM routing_signoffs WHERE signoff_id=?", (signoff_id,)
+            ).fetchone()
+            if existing is not None:
+                if json.loads(existing["payload"]) != payload:
+                    raise RoutingError(
+                        f"routing sign-off {signoff_id!r} already exists with different content"
+                    )
+            else:
+                self.conn.execute(
+                    "INSERT INTO routing_signoffs"
+                    "(signoff_id, request_id, created_seq, catalog_revision, fact_revision, "
+                    "fact_watermark, registry_revision, payload) VALUES(?,?,?,?,?,?,?,?)",
+                    (
+                        signoff_id,
+                        signoff_id,
+                        self._next_seq(),
+                        payload["cut"]["catalog_revision"],
+                        payload["cut"]["fact_revision"],
+                        payload["cut"]["fact_watermark"],
+                        payload["registry_revision"],
+                        _json_dump(payload),
+                    ),
+                )
+        return {"signoff_id": signoff_id, "payload": payload}
+
+    def get_routing_signoff(self, signoff_id: str) -> dict[str, Any]:
+        row = self.conn.execute(
+            "SELECT * FROM routing_signoffs WHERE signoff_id=?", (signoff_id,)
+        ).fetchone()
+        if row is None:
+            raise RoutingError(f"unknown routing sign-off {signoff_id!r}")
+        return {"signoff_id": row["signoff_id"], "payload": json.loads(row["payload"])}
+
+    def routing_explain(
+        self,
+        ticket_id: str,
+        *,
+        focus_desk_ids: Sequence[str] | None = None,
+        snapshot: Cut | None = None,
+        registry_revision: str | None = None,
+    ) -> dict[str, Any]:
+        """Explain a dispute: why same-named desks coexist or a desk is excluded."""
+
+        with self._write_lock, _ReadTransaction(self.conn):
+            cut = snapshot or self.current_cut()
+            state = self.load_catalog_state(cut.catalog_revision)
+            views = {v["ticket_id"]: v for v in self._load_ticket_views(snapshot)}
+            if ticket_id not in views:
+                raise RoutingError(f"unknown ticket {ticket_id!r} at this cut")
+            desks = self.load_desk_registry(registry_revision)
+            result = routing_mod.explain_dispute(
+                views[ticket_id]["classes"],
+                desks,
+                state.edges,
+                state.nodes,
+                focus_desk_ids=focus_desk_ids,
+            )
+            result["ticket_id"] = ticket_id
+            result["cut"] = cut.as_dict()
+            result["registry_revision"] = registry_revision or self.registry_revision() or "D0"
+            return result
+
+    # ------------------------------------------------------------- rosters
+    def create_roster(
+        self,
+        roster_id: str,
+        quotas: Mapping[str, int],
+        *,
+        description: str | None = None,
+        request_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Create the incoming shift's roster: whole-ticket quota per desk."""
+
+        payload_hash = _sha({"kind": "roster", "roster_id": roster_id, "quotas": dict(quotas)})
+        request_id = request_id or f"roster-{roster_id}"
+        existing_event = self._event_for(request_id)
+        if existing_event is not None:
+            details = json.loads(existing_event["details"])
+            if details.get("payload_hash") not in (None, payload_hash):
+                raise ConflictError(
+                    f"request_id {request_id!r} already committed with different content"
+                )
+            return self.get_roster(roster_id)
+
+        desks = {d.desk_id for d in self.load_desk_registry()}
+        clean: dict[str, int] = {}
+        for desk_id, quota in quotas.items():
+            if desk_id not in desks:
+                raise HandoverError(f"roster quota for unregistered desk {desk_id!r}")
+            if not isinstance(quota, int) or isinstance(quota, bool) or quota < 0:
+                raise HandoverError(f"quota for {desk_id!r} must be a non-negative integer")
+            clean[desk_id] = quota
+        if not clean:
+            raise HandoverError("a roster must name at least one desk quota")
+
+        with self._write_lock, _Transaction(self.conn):
+            duplicate = self.conn.execute(
+                "SELECT roster_id FROM rosters WHERE roster_id=?", (roster_id,)
+            ).fetchone()
+            if duplicate is not None:
+                raise HandoverError(f"roster {roster_id!r} already exists")
+            seq = self._next_seq()
+            cut = self.current_cut()
+            self.conn.execute(
+                "INSERT INTO rosters"
+                "(roster_id, request_id, created_seq, description, catalog_revision, "
+                "fact_revision, fact_watermark, quotas) VALUES(?,?,?,?,?,?,?,?)",
+                (
+                    roster_id,
+                    request_id,
+                    seq,
+                    description,
+                    cut.catalog_revision,
+                    cut.fact_revision,
+                    cut.fact_watermark,
+                    _json_dump(clean),
+                ),
+            )
+            self._record_event(
+                seq,
+                request_id,
+                "roster",
+                {
+                    "payload_hash": payload_hash,
+                    "roster_id": roster_id,
+                    **cut.as_dict(),
+                },
+            )
+        return self.get_roster(roster_id)
+
+    def get_roster(self, roster_id: str) -> dict[str, Any]:
+        row = self.conn.execute(
+            "SELECT * FROM rosters WHERE roster_id=?", (roster_id,)
+        ).fetchone()
+        if row is None:
+            raise HandoverError(f"unknown roster {roster_id!r}")
+        quotas = json.loads(row["quotas"])
+        used = self._roster_used(roster_id)
+        return {
+            "roster_id": roster_id,
+            "description": row["description"],
+            "cut": Cut(
+                row["catalog_revision"], row["fact_revision"], int(row["fact_watermark"])
+            ).as_dict(),
+            "quotas": [
+                {
+                    "desk_id": desk,
+                    "capacity": quotas[desk],
+                    "used": used.get(desk, 0),
+                    "remaining": quotas[desk] - used.get(desk, 0),
+                }
+                for desk in sorted(quotas)
+            ],
+        }
+
+    def list_rosters(self) -> list[dict[str, Any]]:
+        rows = self.conn.execute(
+            "SELECT roster_id FROM rosters ORDER BY created_seq, roster_id"
+        ).fetchall()
+        return [self.get_roster(r["roster_id"]) for r in rows]
+
+    def _roster_used(
+        self, roster_id: str, *, except_stack_id: str | None = None
+    ) -> dict[str, int]:
+        """Slots consumed by accepted handovers on this roster.
+
+        Passing ``except_stack_id`` frees the slots held by earlier sign-offs
+        of the *same* stack: re-adjudicating one stack after a catalog change
+        replaces its own old plan, while other stacks' sign-offs keep theirs.
+        """
+
+        rows = self.conn.execute(
+            "SELECT signoff_id, stack, plan FROM handover_signoffs "
+            "WHERE roster_id=? AND status='signed'",
+            (roster_id,),
+        ).fetchall()
+        used: dict[str, int] = {}
+        for row in rows:
+            if except_stack_id is not None:
+                old_stack = json.loads(row["stack"])
+                # A stack without an explicit stack_id is only ever signed once
+                # under its own sign-off id, so that is its identity too.
+                old_id = old_stack.get("stack_id", row["signoff_id"])
+                if old_id == except_stack_id:
+                    continue
+            plan = json.loads(row["plan"])
+            for assignment in plan["assignments"]:
+                used[assignment["desk_id"]] = (
+                    used.get(assignment["desk_id"], 0) + assignment["slots_used"]
+                )
+        return used
+
+    # ------------------------------------------------------------- handovers
+    def handover(
+        self,
+        roster_id: str,
+        stack: dict[str, Any],
+        *,
+        signoff_id: str,
+        request_id: str | None = None,
+        snapshot: Cut | None = None,
+    ) -> dict[str, Any]:
+        """Plan and sign one stack against the roster's *currently free* slots.
+
+        Eligibility is the retained-desk set from the routing verdict at the
+        pinned cut. A feasible minimum-workhours plan is signed and consumes
+        its slots; an infeasible stack changes nothing and is recorded as
+        ``unchanged``. Re-signing a new sign-off after another order took slots
+        always judges against the remaining capacity.
+        """
+
+        request_id = request_id or signoff_id
+        payload_hash = _sha(
+            {"kind": "handover", "roster_id": roster_id, "stack": stack, "signoff_id": signoff_id}
+        )
+        existing_event = self._event_for(request_id)
+        if existing_event is not None:
+            details = json.loads(existing_event["details"])
+            if details.get("payload_hash") not in (None, payload_hash):
+                raise ConflictError(
+                    f"request_id {request_id!r} already committed with different content"
+                )
+            return self.get_handover(signoff_id)
+
+        with self._write_lock, _Transaction(self.conn):
+            seq = self._next_seq()
+            cut = snapshot or self.current_cut()
+            roster_row = self.conn.execute(
+                "SELECT * FROM rosters WHERE roster_id=?", (roster_id,)
+            ).fetchone()
+            if roster_row is None:
+                raise HandoverError(f"unknown roster {roster_id!r}")
+            capacities = json.loads(roster_row["quotas"])
+            # Re-adjudicating one stack replaces its own previous plan, so its
+            # old slots are released before re-solving; if no feasible new plan
+            # exists nothing is written and the old plan stays the live state.
+            # Other stacks' accepted sign-offs keep consuming their slots.
+            stack_id = stack.get("stack_id") or signoff_id
+            already_used = self._roster_used(roster_id, except_stack_id=stack_id)
+            remaining = {
+                desk: capacities[desk] - already_used.get(desk, 0) for desk in capacities
+            }
+            if any(value < 0 for value in remaining.values()):  # defensive only
+                raise HandoverError(f"roster {roster_id!r} is over-committed")
+
+            state = self.load_catalog_state(cut.catalog_revision)
+            views = {v["ticket_id"]: v for v in self._load_ticket_views(snapshot)}
+            entries = stack.get("tickets", [])
+            ticket_order = [str(e["ticket_id"]) for e in entries]
+            if len(set(ticket_order)) != len(ticket_order):
+                raise HandoverError("a ticket appears twice in one handover stack")
+            missing = [tid for tid in ticket_order if tid not in views]
+            if missing:
+                raise HandoverError(f"unknown ticket(s) at this cut: {missing}")
+            withdrawn = [tid for tid in ticket_order if not views[tid]["active"]]
+            if withdrawn:
+                raise HandoverError(
+                    f"withdrawn tickets are not handed over: {withdrawn}"
+                )
+
+            sealed_groups = [list(group) for group in stack.get("sealed_groups", [])]
+            if len(ticket_order) > 120:
+                raise HandoverError("a handover stack holds at most 120 tickets")
+            multi_item_seals = [group for group in sealed_groups if len(group) > 1]
+            if len(multi_item_seals) > 8:
+                raise HandoverError("a handover stack has at most 8 multi-ticket seals")
+            if len(capacities) > 8:
+                raise HandoverError("a shift has at most 8 business desks")
+            units = handover_mod.build_units(ticket_order, sealed_groups)
+
+            routing = routing_mod.checkout(
+                [views[tid] for tid in ticket_order],
+                self.load_desk_registry(),
+                state.edges,
+                state.nodes,
+            )
+            if routing["returned"]:
+                raise HandoverError(
+                    "tickets with no retainable desk must return for registration first: "
+                    + ", ".join(item["ticket_id"] for item in routing["returned"])
+                )
+            eligibility = {
+                item["ticket_id"]: frozenset(item["retained_desks"])
+                for item in routing["actionable"]
+            }
+            holder = {
+                str(e["ticket_id"]): e["from_desk"]
+                for e in entries
+                if e.get("from_desk") is not None
+            }
+            transfer_cost = {
+                str(e["ticket_id"]): int(e["transfer_cost"])
+                for e in entries
+                if e.get("transfer_cost") is not None
+            }
+            unknown_cost_desk = [
+                tid for tid, desk in holder.items() if desk not in capacities
+            ]
+            if unknown_cost_desk:
+                raise HandoverError(
+                    f"from_desk not present on roster {roster_id!r}: {unknown_cost_desk}"
+                )
+
+            problem = handover_mod.HandoverProblem(
+                units=units,
+                eligibility=eligibility,
+                quotas=remaining,
+                holder=holder,
+                transfer_cost=transfer_cost,
+            )
+            plan = handover_mod.solve(problem)
+            plan["roster_id"] = roster_id
+            plan["signoff_id"] = signoff_id
+            plan["cut"] = cut.as_dict()
+            plan["registry_revision"] = self.registry_revision() or "D0"
+            plan["routing"] = routing
+            plan["roster_capacity"] = [
+                {"desk_id": d, "capacity": capacities[d], "remaining_at_start": remaining[d]}
+                for d in sorted(capacities)
+            ]
+            # Re-signing a stack after a catalog/registry change replaces the
+            # previous adjudication of THAT stack rather than stacking on top
+            # of it: its old plan stops consuming roster slots. Other stacks'
+            # sign-offs are untouched. An infeasible attempt changes nothing, so
+            # the prior handover state is maintained verbatim.
+            if plan["feasible"]:
+                previous = self.conn.execute(
+                    "SELECT signoff_id, stack FROM handover_signoffs "
+                    "WHERE roster_id=? AND status='signed'",
+                    (roster_id,),
+                ).fetchall()
+                for old in previous:
+                    if json.loads(old["stack"]).get("stack_id", old["signoff_id"]) == stack_id:
+                        self.conn.execute(
+                            "UPDATE handover_signoffs SET status='superseded' "
+                            "WHERE signoff_id=?",
+                            (old["signoff_id"],),
+                        )
+            status = "signed" if plan["feasible"] else "unchanged"
+
+            duplicate = self.conn.execute(
+                "SELECT signoff_id FROM handover_signoffs WHERE signoff_id=?", (signoff_id,)
+            ).fetchone()
+            if duplicate is not None:
+                raise HandoverError(f"handover sign-off {signoff_id!r} already exists")
+            self.conn.execute(
+                "INSERT INTO handover_signoffs"
+                "(signoff_id, roster_id, request_id, created_seq, status, catalog_revision, "
+                "fact_revision, fact_watermark, registry_revision, total_workhours, stack, plan)"
+                " VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    signoff_id,
+                    roster_id,
+                    request_id,
+                    seq,
+                    status,
+                    cut.catalog_revision,
+                    cut.fact_revision,
+                    cut.fact_watermark,
+                    plan["registry_revision"],
+                    plan["total_workhours"],
+                    _json_dump(stack),
+                    _json_dump(plan),
+                ),
+            )
+            self._record_event(
+                seq,
+                request_id,
+                "handover",
+                {
+                    "payload_hash": payload_hash,
+                    "signoff_id": signoff_id,
+                    "roster_id": roster_id,
+                    "status": status,
+                    "total_workhours": plan["total_workhours"],
+                    **cut.as_dict(),
+                },
+            )
+        return self.get_handover(signoff_id)
+
+    def get_handover(self, signoff_id: str) -> dict[str, Any]:
+        row = self.conn.execute(
+            "SELECT * FROM handover_signoffs WHERE signoff_id=?", (signoff_id,)
+        ).fetchone()
+        if row is None:
+            raise HandoverError(f"unknown handover sign-off {signoff_id!r}")
+        return {
+            "signoff_id": row["signoff_id"],
+            "roster_id": row["roster_id"],
+            "status": row["status"],
+            "total_workhours": row["total_workhours"],
+            "cut": Cut(
+                row["catalog_revision"], row["fact_revision"], int(row["fact_watermark"])
+            ).as_dict(),
+            "registry_revision": row["registry_revision"],
+            "stack": json.loads(row["stack"]),
+            "plan": json.loads(row["plan"]),
+        }
+
+    def list_handovers(self, roster_id: str | None = None) -> list[dict[str, Any]]:
+        if roster_id is None:
+            rows = self.conn.execute(
+                "SELECT signoff_id FROM handover_signoffs ORDER BY created_seq, signoff_id"
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                "SELECT signoff_id FROM handover_signoffs WHERE roster_id=? "
+                "ORDER BY created_seq, signoff_id",
+                (roster_id,),
+            ).fetchall()
+        return [self.get_handover(r["signoff_id"]) for r in rows]
+
+    def release_handover(self, signoff_id: str) -> dict[str, Any]:
+        """Release the slots held by a signed stack, keeping the document.
+
+        Used when an old handover is wound down before a different stack takes
+        its slots. The sign-off remains on file (status ``released``) and is
+        simply excluded from roster occupancy; an already non-signed document
+        is returned unchanged.
+        """
+
+        with self._write_lock, _Transaction(self.conn):
+            row = self.conn.execute(
+                "SELECT status FROM handover_signoffs WHERE signoff_id=?", (signoff_id,)
+            ).fetchone()
+            if row is None:
+                raise HandoverError(f"unknown handover sign-off {signoff_id!r}")
+            if row["status"] == "signed":
+                self.conn.execute(
+                    "UPDATE handover_signoffs SET status='released' WHERE signoff_id=?",
+                    (signoff_id,),
+                )
+        return self.get_handover(signoff_id)
 
     # ------------------------------------------------------------- reporting
     def history(self) -> list[dict[str, Any]]:

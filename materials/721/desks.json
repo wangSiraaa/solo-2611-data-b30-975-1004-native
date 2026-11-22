@@ -1,0 +1,7 @@
+{
+  "desks": [
+    {"desk_id": "A", "node_id": "A", "name": "办件一席"},
+    {"desk_id": "B", "node_id": "B", "name": "办件二席"},
+    {"desk_id": "R", "node_id": "R", "name": "总台"}
+  ]
+}

@@ -13,7 +13,9 @@ from .store import (
     CatalogError,
     ConflictError,
     FactError,
+    HandoverError,
     ProductError,
+    RoutingError,
     Store,
     StoreError,
 )
@@ -237,6 +239,93 @@ def cmd_history(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_register_desks(args: argparse.Namespace) -> int:
+    data = _read_json(args.desks)
+    desks = data.get("desks", data if isinstance(data, list) else [])
+    with _open(args) as store:
+        result = store.register_desks(desks, request_id=args.request_id)
+        if args.out:
+            Path(args.out).write_text(
+                json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+        _dump(result)
+    return 0
+
+
+def cmd_route(args: argparse.Namespace) -> int:
+    ticket_ids = args.tickets or None
+    with _open(args) as store:
+        if args.signoff:
+            result = store.sign_routing(args.signoff, ticket_ids)
+        else:
+            result = store.routing_checkout(ticket_ids)
+        if args.out:
+            Path(args.out).write_text(
+                json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+        _dump(result)
+    return 0
+
+
+def cmd_dispute(args: argparse.Namespace) -> int:
+    focus = args.desks or None
+    with _open(args) as store:
+        _dump(store.routing_explain(args.ticket, focus_desk_ids=focus))
+    return 0
+
+
+def cmd_roster(args: argparse.Namespace) -> int:
+    data = _read_json(args.roster)
+    roster_id = data["roster_id"]
+    with _open(args) as store:
+        result = store.create_roster(
+            roster_id, data["quotas"], description=data.get("description")
+        )
+        _dump(result)
+    return 0
+
+
+def cmd_show_roster(args: argparse.Namespace) -> int:
+    with _open(args) as store:
+        if args.roster_id:
+            _dump(store.get_roster(args.roster_id))
+        else:
+            _dump({"rosters": store.list_rosters()})
+    return 0
+
+
+def cmd_handover(args: argparse.Namespace) -> int:
+    stack = _read_json(args.stack)
+    with _open(args) as store:
+        result = store.handover(
+            args.roster_id, stack, signoff_id=args.signoff_id
+        )
+        if args.out:
+            Path(args.out).write_text(
+                json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+        _dump(result)
+    return 0
+
+
+def cmd_show_handover(args: argparse.Namespace) -> int:
+    with _open(args) as store:
+        if args.signoff_id:
+            _dump(store.get_handover(args.signoff_id))
+        else:
+            _dump({"handovers": store.list_handovers(args.roster_id)})
+    return 0
+
+
+def cmd_release_handover(args: argparse.Namespace) -> int:
+    with _open(args) as store:
+        _dump(store.release_handover(args.signoff_id))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m cs",
@@ -292,6 +381,47 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("history", help="show committed events")
     p.set_defaults(func=cmd_history)
 
+    p = sub.add_parser("register-desks", help="publish a desk registry revision")
+    p.add_argument("desks", help="JSON file with desks [{desk_id, node_id, name}]")
+    p.add_argument("--request-id")
+    p.add_argument("--out", help="write the registry revision document here")
+    p.set_defaults(func=cmd_register_desks)
+
+    p = sub.add_parser("route", help="check out retainable desks for tickets at this cut")
+    p.add_argument("tickets", nargs="*", help="ticket ids; default: every active ticket")
+    p.add_argument("--signoff", help="persist under this routing sign-off id")
+    p.add_argument("--out", help="write the routing document here")
+    p.set_defaults(func=cmd_route)
+
+    p = sub.add_parser("dispute", help="explain why desks coexist or are excluded")
+    p.add_argument("ticket", help="ticket id under dispute")
+    p.add_argument("--desks", nargs="*", help="focus desk ids; default: every desk")
+    p.set_defaults(func=cmd_dispute)
+
+    p = sub.add_parser("roster", help="create an incoming-shift roster with per-desk quotas")
+    p.add_argument("roster", help="JSON file {roster_id, description?, quotas}")
+    p.set_defaults(func=cmd_roster)
+
+    p = sub.add_parser("show-roster", help="show roster capacities and remaining slots")
+    p.add_argument("roster_id", nargs="?")
+    p.set_defaults(func=cmd_show_roster)
+
+    p = sub.add_parser("handover", help="plan and sign one stack against a roster")
+    p.add_argument("roster_id", help="roster whose remaining slots are used")
+    p.add_argument("stack", help="JSON file {tickets:[{ticket_id, from_desk, transfer_cost?}], sealed_groups?}")
+    p.add_argument("signoff_id", help="id for this handover sign-off")
+    p.add_argument("--out", help="write the sign-off document here")
+    p.set_defaults(func=cmd_handover)
+
+    p = sub.add_parser("show-handover", help="show handover sign-offs")
+    p.add_argument("signoff_id", nargs="?")
+    p.add_argument("--roster-id", help="filter by roster when listing")
+    p.set_defaults(func=cmd_show_handover)
+
+    p = sub.add_parser("release-handover", help="release slots held by a signed stack")
+    p.add_argument("signoff_id")
+    p.set_defaults(func=cmd_release_handover)
+
     return parser
 
 
@@ -300,7 +430,15 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         return int(args.func(args))
-    except (StoreError, CatalogError, FactError, ConflictError, ProductError) as exc:
+    except (
+        StoreError,
+        CatalogError,
+        FactError,
+        ConflictError,
+        ProductError,
+        RoutingError,
+        HandoverError,
+    ) as exc:
         print(f"error: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 2
 

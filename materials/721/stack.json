@@ -1,0 +1,9 @@
+{
+  "stack_id": "stack-main",
+  "tickets": [
+    {"ticket_id": "T1", "from_desk": "A", "transfer_cost": 1},
+    {"ticket_id": "T2", "from_desk": "A", "transfer_cost": 1},
+    {"ticket_id": "T3", "from_desk": "B", "transfer_cost": 1}
+  ],
+  "sealed_groups": [["T1", "T2"]]
+}

@@ -7,12 +7,17 @@ publication cut. Python 3.11, standard library only, SQLite storage.
 cs/
   catalog.py   pure DAG algorithms: cycle check, ancestors, descendants,
                shortest witness paths, coverage explanation
+  routing.py   pure desk-routing: reachable desks, strict-ancestor pruning,
+               per-ticket check-out and dispute explanation
+  handover.py  pure shift-handover solver: sealed groups, quotas, minimum
+               total workhours, deterministic tie-break
   store.py     SQLite store: revisions, atomic bundles, cut-pinned queries,
-               immutable products
+               desk registry, routing/handover sign-offs, immutable products
   cli.py       command line entry point (`python -m cs`)
 tests/         unit tests (python -m unittest discover -s tests)
 demo.py        runs materials/721 end to end and feeds consumer.py
 showcase.py    walks through every required scenario on the diamond
+handover_demo.py  reproduces the two re-adjudications of the worked example
 ```
 
 ## Quick start
@@ -123,6 +128,77 @@ cut; two different cuts never share the same triple.
   remain available for historical replay.
 * A bundle that would not change any state (no edge delta and no fact advance)
   is recorded as a no-op and creates no new revision.
+
+## Desk registry and routing (`desk-routing/1`)
+
+A business desk (业务席) is registered on one catalog node; several desks may
+share one node and display names are not identity. The registry is its own
+versioned stream (`D1`, `D2`, ...) and every registry commit records the
+catalog/fact cut against which its node ids were validated, so an old routing
+verdict is reproducible with the registry it was signed on.
+
+For one ticket, a desk is *reachable* when any of the ticket's direct classes
+equals the desk's node or can reach it through the child→parent edges. The
+reachable set is then reconciled:
+
+* if desk 甲's node is a **strict ancestor** of desk 乙's node, the more
+  specific desk 乙 is retained and 甲 is pruned (with the kept descendants
+  listed as evidence);
+* desks on incomparable nodes are parallel and both retained;
+* desks registered on the **same node** can never be strict ancestors of one
+  another, so same-node desks (including same-named ones) always survive
+  together.
+
+Each check-out keeps the full evidence per desk: covering direct classes and
+one deterministic witness path, plus the retained and pruned lists. Tickets
+whose retained set is empty are returned for re-registration; withdrawn
+tickets are reported as not processed and never handed over. A dispute query
+explains per desk why it is retained, pruned as an ancestor, or unreachable.
+
+```bash
+python3 -m cs --db demo.db register-desks materials/721/desks.json
+python3 -m cs --db demo.db route T1                 # check-out, pinned to this cut
+python3 -m cs --db demo.db route T1 --signoff R1    # persist the sign-off
+python3 -m cs --db demo.db dispute T1 --desks R     # why was the general desk excluded?
+```
+
+## Shift handover (`handover-plan/1`)
+
+The incoming shift brings its own roster: each desk has a fixed whole-ticket
+quota. A stack consists of **sealed groups** (tickets sealed together that must
+go to one desk; every member must be eligible and each occupies one slot) and
+**loose tickets** (each assigned independently). Eligibility is exactly the
+retained-desk set from the routing verdict at the pinned cut.
+
+Moving a ticket to a desk different from its previous holder costs the given
+per-ticket workhours (staying put costs zero). The solver enumerates feasible
+assignments with branch-and-bound and returns the minimum-total-workhours
+plan; equal optima resolve to one deterministic plan (sorted desk order). A
+plan is only accepted when **every** unit can be placed. Otherwise the stack
+is recorded as `unchanged` with concrete blockers and no roster slot moves.
+
+* Re-signing the same `stack_id` after a catalog/registry change replaces that
+  stack's previous plan: its old slots are released before re-solving, and on
+  success the old sign-off is marked `superseded`.
+* A *different* stack keeps its accepted slots, so a re-signing always judges
+  against the currently remaining capacity ("另一单抢去名额后重新签收须按现存
+  名额判"). `release-handover` winds a signed stack down while keeping its
+  document on file.
+* The sign-off lists each unit's actual receiving desk, per-ticket workhours
+  and the net slot occupation per desk.
+
+```bash
+python3 -m cs --db demo.db roster materials/721/roster.json
+python3 -m cs --db demo.db handover night-1 materials/721/stack.json H1
+python3 -m cs --db demo.db show-roster night-1
+python3 -m cs --db demo.db show-handover H1
+```
+
+`python3 handover_demo.py` reproduces the worked example's two
+re-adjudications against real catalog bundles: original shape → zero
+workhours; after deleting `L→A` the sealed pair and the loose ticket all go to
+B (2 workhours); after restoring the edge with one A slot already taken by
+another order, the two-ticket seal still cannot be split and goes to B whole.
 
 ## Tests
 
