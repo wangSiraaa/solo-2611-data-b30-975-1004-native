@@ -7,12 +7,15 @@ publication cut. Python 3.11, standard library only, SQLite storage.
 cs/
   catalog.py   pure DAG algorithms: cycle check, ancestors, descendants,
                shortest witness paths, coverage explanation
+  ballot.py    pure distance-only ballots and both-sides pair tallies
+  agenda.py    cheapest legal knockout agenda that leaves one proposal
   store.py     SQLite store: revisions, atomic bundles, cut-pinned queries,
-               immutable products
+               immutable products, frozen registers, settlements
   cli.py       command line entry point (`python -m cs`)
 tests/         unit tests (python -m unittest discover -s tests)
 demo.py        runs materials/721 end to end and feeds consumer.py
 showcase.py    walks through every required scenario on the diamond
+voting_demo.py walks the A/B/C voting scenario end to end through the store
 ```
 
 ## Quick start
@@ -37,7 +40,48 @@ python3 materials/721/consumer.py out/overlap.json
 `python3 demo.py` writes `demo/out/before.json` and `demo/out/after.json` and
 runs the provided read-only `consumer.py` against both. `python3 showcase.py`
 prints the diamond, multi-label-same-parent, parent-and-child, same-name,
-withdraw/reopen, cycle rejection and recovery scenarios.
+withdraw/reopen, cycle rejection and recovery scenarios. `python3
+voting_demo.py` reproduces the A/B/C vote — a real edge submission flips the
+pairs and unlocks a banned-pair agenda.
+
+## Ballots and agendas
+
+The chamber votes on proposals (catalog targets), one vote per in-force
+ticket. The weight is always one, zero-amount tickets still vote, and a ticket
+with several direct classes still casts exactly **one** ballot:
+
+* its distance for a proposal is the shortest number of upward edges from any
+  direct class to that proposal;
+* for a pair, the strictly shorter distance wins; equal distance abstains;
+  reachable beats unreachable; both unreachable abstains too.
+* an abstention is never a vote. If both sides have equal vote counts the
+  pair is a tie, and the selected chair order seats whichever of the two comes
+  first. The order is only ever used for that tie — never as a field-wide
+  ranking. Without an order a tie stays a draw.
+
+A **frozen register** (`ballot-register/1`) records, for every requested pair
+at one cut, both vote counts, the abstainers, the contested tickets, and every
+ballot's witness paths to both proposals. It is computed from distances alone,
+so any proposer can re-audit it. Registers are immutable and cut-pinned like
+products; the committee votes only from a register.
+
+An **agenda** repeatedly pairs two surviving proposals, drops the loser, and
+tables the last survivor. Pairs may be forbidden, and each allowed pair may
+carry a non-negative staging fee. `cs.settle` returns the minimum-fee legal
+agenda that leaves a chosen proposal tabled, with every round's winners and
+costs, or an explicit `feasible: false` reason. For up to 18 proposals the
+exact search is a subset DP over at most 17 bits.
+
+```bash
+# Freeze a register at the current cut
+python3 -m cs --db vote.db register register_request.json --register-id R1
+
+# Cheapest agenda that leaves A tabled, voting from that register
+python3 -m cs --db vote.db settle settle_request.json --register R1
+```
+
+A settlement request names `target`, `proposals`, `pairs` (with optional
+`cost`), optional `forbidden`, and `order` (the chair order).
 
 ## Catalog model
 

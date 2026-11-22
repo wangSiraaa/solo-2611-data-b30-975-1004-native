@@ -226,6 +226,7 @@ def cmd_show(args: argparse.Namespace) -> int:
                     for nid in sorted(store.load_catalog_state().nodes)
                 },
                 "products": store.list_products(),
+                "registers": store.list_registers(),
             }
         )
     return 0
@@ -234,6 +235,129 @@ def cmd_show(args: argparse.Namespace) -> int:
 def cmd_history(args: argparse.Namespace) -> int:
     with _open(args) as store:
         _dump({"history": store.history(), "cut": store.current_cut().as_dict()})
+    return 0
+
+
+def _load_ballot_file(path: str) -> dict[str, Any]:
+    """Read a settlement request: proposals, target, pairs, costs, order."""
+
+    data = _read_json(path)
+    if not isinstance(data, dict):
+        raise StoreError(f"{path}: expected a JSON object")
+    return data
+
+
+def _pairs_from_request(data: dict[str, Any]) -> list[list[str]]:
+    pairs = data.get("pairs", [])
+    out: list[list[str]] = []
+    for raw in pairs:
+        if isinstance(raw, dict):
+            out.append([raw["left"], raw["right"]])
+        else:
+            out.append([raw[0], raw[1]])
+    return out
+
+
+def cmd_register(args: argparse.Namespace) -> int:
+    data = _load_ballot_file(args.request)
+    proposals = data.get("proposals") or data.get("targets")
+    if not proposals:
+        raise StoreError("register request needs 'proposals' or 'targets'")
+    pairs = _pairs_from_request(data)
+    with _open(args) as store:
+        result = store.publish_register(
+            proposals,
+            pairs,
+            name=args.name or data.get("name"),
+            register_id=args.register_id,
+        )
+        if args.out:
+            Path(args.out).write_text(
+                json.dumps(result["payload"], ensure_ascii=False, indent=2, sort_keys=True)
+                + "\n",
+                encoding="utf-8",
+            )
+        _dump(
+            {
+                "register_id": result["register_id"],
+                "created_at": result["created_at"],
+                "cut": result["payload"]["cut"],
+                "out": args.out,
+            }
+        )
+    return 0
+
+
+def cmd_show_register(args: argparse.Namespace) -> int:
+    with _open(args) as store:
+        _dump(store.get_register(args.register))
+    return 0
+
+
+def cmd_settle(args: argparse.Namespace) -> int:
+    data = _load_ballot_file(args.request)
+    target = data.get("target")
+    proposals = data.get("proposals") or data.get("targets")
+    if not target or not proposals:
+        raise StoreError("settlement request needs 'target' and 'proposals'")
+    pairs = _pairs_from_request(data)
+
+    def cost_key(a: str, b: str) -> str:
+        return f"{a}|{b}" if a < b else f"{b}|{a}"
+
+    costs: dict[str, int] = {}
+    forbidden: list[list[str]] = []
+    for raw in data.get("pairs", []):
+        if not isinstance(raw, dict):
+            continue
+        a, b = str(raw["left"]), str(raw["right"])
+        key = cost_key(a, b)
+        explicitly_forbidden = bool(raw.get("forbidden")) or (
+            "cost" in raw and raw["cost"] is None
+        )
+        if explicitly_forbidden:
+            forbidden.append([a, b])
+        elif "cost" in raw:
+            costs[key] = raw["cost"]
+    for a, b in data.get("forbidden", []):
+        forbidden.append([str(a), str(b)])
+    for key, value in data.get("costs", {}).items():
+        if isinstance(key, (list, tuple)) and len(key) == 2:
+            costs[cost_key(str(key[0]), str(key[1]))] = value
+        else:
+            costs[str(key)] = value
+
+    order = data.get("order") or data.get("chair_order")
+    register = args.register or data.get("register")
+    if not register:
+        raise StoreError(
+            "settlement must cite a frozen register (--register or 'register')"
+        )
+
+    with _open(args) as store:
+        result = store.settle(
+            target,
+            proposals,
+            pairs,
+            costs=costs or None,
+            forbidden=forbidden,
+            order=order,
+            register=register,
+            name=args.name or data.get("name"),
+            persist=args.persist,
+        )
+        if args.out:
+            Path(args.out).write_text(
+                json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+        _dump(result)
+    return 0
+
+
+def cmd_show_settlement(args: argparse.Namespace) -> int:
+    with _open(args) as store:
+        _dump(store.get_settlement(args.settlement))
     return 0
 
 
@@ -291,6 +415,29 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("history", help="show committed events")
     p.set_defaults(func=cmd_history)
+
+    p = sub.add_parser("register", help="freeze a both-sides ballot register")
+    p.add_argument("request", help="JSON with proposals and pairs")
+    p.add_argument("--name")
+    p.add_argument("--register-id")
+    p.add_argument("--out", help="write the ballot-register/1 payload here")
+    p.set_defaults(func=cmd_register)
+
+    p = sub.add_parser("show-register", help="show a frozen register")
+    p.add_argument("register")
+    p.set_defaults(func=cmd_show_register)
+
+    p = sub.add_parser("settle", help="cheapest legal agenda leaving a proposal")
+    p.add_argument("request", help="JSON with target, proposals, pairs/costs/order")
+    p.add_argument("--register", help="vote strictly from this frozen register id")
+    p.add_argument("--name")
+    p.add_argument("--persist", action="store_true", help="store the settlement")
+    p.add_argument("--out", help="write the agenda-settlement/1 payload here")
+    p.set_defaults(func=cmd_settle)
+
+    p = sub.add_parser("show-settlement", help="show a stored settlement")
+    p.add_argument("settlement")
+    p.set_defaults(func=cmd_show_settlement)
 
     return parser
 

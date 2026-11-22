@@ -4,11 +4,14 @@ Public entry points:
 
 * :mod:`cs.catalog` - pure DAG algorithms (cycles, ancestors, descendants,
   coverage explanation).
-* :mod:`cs.store` - SQLite-backed catalog and fact store with atomic bundles
-  and cut-pinned queries.
+* :mod:`cs.ballot` - distance-only ballots and both-sides pair tallies.
+* :mod:`cs.agenda` - cheapest legal knockout agenda that leaves a proposal.
+* :mod:`cs.store` - SQLite-backed catalog and fact store with atomic bundles,
+  cut-pinned queries, frozen ballot registers and agenda settlements.
 * :mod:`cs.cli` - command line interface.
 """
 
+from .agenda import AgendaError  # noqa: F401
 from .store import (  # noqa: F401
     CatalogError,
     CatalogState,
@@ -24,6 +27,7 @@ from .store import (  # noqa: F401
 )
 
 __all__ = [
+    "AgendaError",
     "CatalogError",
     "CatalogState",
     "Committed",

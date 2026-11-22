@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Iterable, Sequence
 
-from . import catalog
+from . import agenda, ballot, catalog
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -93,6 +93,22 @@ CREATE TABLE IF NOT EXISTS products (
     fact_revision    TEXT NOT NULL,
     created_at       TEXT NOT NULL,
     payload          TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS registers (
+    register_id      TEXT PRIMARY KEY,
+    name             TEXT,
+    catalog_revision TEXT NOT NULL,
+    fact_revision    TEXT NOT NULL,
+    fact_watermark   INTEGER NOT NULL,
+    created_at       TEXT NOT NULL,
+    payload          TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS settlements (
+    settlement_id TEXT PRIMARY KEY,
+    target        TEXT NOT NULL,
+    name          TEXT,
+    created_at    TEXT NOT NULL,
+    payload       TEXT NOT NULL
 );
 """
 
@@ -810,6 +826,62 @@ class Store:
             return None
         return int(row["seq"]), row["revision"]
 
+    def _load_snapshot(
+        self, snapshot: Cut | None
+    ) -> tuple[CatalogState, list[Fact], Cut]:
+        """Load catalog + active facts pinned to one cut (no transaction here).
+
+        Shared by :meth:`query` and :meth:`read_snapshot` so both resolve the
+        catalog revision and the fact watermark from the same read snapshot.
+        """
+
+        if snapshot is not None:
+            state = self.load_catalog_state(snapshot.catalog_revision)
+            if snapshot.fact_watermark == 0:
+                # Initial state: no fact commit has been made yet.
+                if snapshot.fact_revision not in ("F0",):
+                    raise ConflictError(
+                        "snapshot fact revision does not match its watermark"
+                    )
+                facts: list[Fact] = []
+            else:
+                resolved = self._watermark_seq(snapshot.fact_watermark)
+                if resolved is None:
+                    raise ConflictError(
+                        f"unknown fact watermark {snapshot.fact_watermark}"
+                    )
+                seq, revision = resolved
+                if revision != snapshot.fact_revision:
+                    raise ConflictError(
+                        "snapshot fact revision does not match its watermark"
+                    )
+                facts = self._load_facts_at_seq(seq)
+            return state, facts, snapshot
+
+        catalog_rev = self.catalog_revision() or "G0"
+        state = self.load_catalog_state(catalog_rev)
+        facts = self._load_active_facts_current()
+        cut = Cut(
+            catalog_revision=catalog_rev,
+            fact_revision=self.fact_revision(),
+            fact_watermark=self.fact_watermark(),
+        )
+        return state, facts, cut
+
+    def read_snapshot(
+        self, snapshot: Cut | None = None
+    ) -> tuple[CatalogState, list[Fact], Cut]:
+        """Return ``(catalog, active facts, cut)`` from one read snapshot.
+
+        With ``snapshot=None`` the current committed cut is pinned; passing a
+        historical ``Cut`` re-reads that committed catalog revision and fact
+        watermark.  The active ticket rows that are returned are exactly the
+        ballots cast at that cut (withdrawn tickets are absent).
+        """
+
+        with self._write_lock, _ReadTransaction(self.conn):
+            return self._load_snapshot(snapshot)
+
     # --------------------------------------------------------------- submit
     def submit(
         self, operation: dict[str, Any], *, request_id: str | None = None
@@ -1424,38 +1496,7 @@ class Store:
             seen.add(target)
 
         with self._write_lock, _ReadTransaction(self.conn):
-            facts: list[Fact]
-            if snapshot is not None:
-                state = self.load_catalog_state(snapshot.catalog_revision)
-                if snapshot.fact_watermark == 0:
-                    # Initial state: no fact commit has been made yet.
-                    if snapshot.fact_revision not in ("F0",):
-                        raise ConflictError(
-                            "snapshot fact revision does not match its watermark"
-                        )
-                    facts = []
-                else:
-                    resolved = self._watermark_seq(snapshot.fact_watermark)
-                    if resolved is None:
-                        raise ConflictError(
-                            f"unknown fact watermark {snapshot.fact_watermark}"
-                        )
-                    seq, revision = resolved
-                    if revision != snapshot.fact_revision:
-                        raise ConflictError(
-                            "snapshot fact revision does not match its watermark"
-                        )
-                    facts = self._load_facts_at_seq(seq)
-                cut = snapshot
-            else:
-                catalog_rev = self.catalog_revision() or "G0"
-                state = self.load_catalog_state(catalog_rev)
-                facts = self._load_active_facts_current()
-                cut = Cut(
-                    catalog_revision=catalog_rev,
-                    fact_revision=self.fact_revision(),
-                    fact_watermark=self.fact_watermark(),
-                )
+            state, facts, cut = self._load_snapshot(snapshot)
             for target in target_list:
                 if target not in state.nodes:
                     raise CatalogError(f"unknown target {target!r}")
@@ -1543,6 +1584,371 @@ class Store:
         if node_id not in state.nodes:
             raise CatalogError(f"unknown node {node_id!r}")
         return sorted(catalog.descendants(node_id, state.edges))
+
+    # --------------------------------------------------------------- registers
+    @staticmethod
+    def _pair_id(a: str, b: str) -> str:
+        return f"{a}|{b}" if a < b else f"{b}|{a}"
+
+    def build_register(
+        self,
+        targets: Sequence[str],
+        pairs: Sequence[Sequence[str]],
+        *,
+        name: str | None = None,
+        snapshot: Cut | None = None,
+    ) -> dict[str, Any]:
+        """Freeze both-sides vote counts for every requested pair at one cut.
+
+        The register is the only thing the committee accepts.  It is computed
+        purely from distances (never from the chair order) so any proposer can
+        re-audit it against the same frozen cut.  Each pair records both vote
+        counts, the abstaining tickets, the contested tickets, and every
+        ballot's witness paths to both proposals.
+        """
+
+        proposal_list = list(dict.fromkeys(str(t) for t in targets))
+        if not proposal_list:
+            raise StoreError("a register needs at least one proposal")
+        state, facts, cut = self.read_snapshot(snapshot)
+        for proposal in proposal_list:
+            if proposal not in state.nodes:
+                raise CatalogError(f"unknown proposal {proposal!r}")
+
+        seen: dict[str, dict[str, Any]] = {}
+        for raw in pairs:
+            if len(raw) != 2:
+                raise StoreError(f"a pair must name two proposals: {raw!r}")
+            a, b = str(raw[0]), str(raw[1])
+            if a == b:
+                raise StoreError(f"a proposal cannot be paired with itself: {a!r}")
+            for side in (a, b):
+                if side not in proposal_list:
+                    raise StoreError(
+                        f"pair {a}/{b} references {side!r}, not a proposal"
+                    )
+            key = self._pair_id(a, b)
+            if key in seen:
+                continue
+            tally = ballot.tally_pair(
+                key.split("|")[0],
+                key.split("|")[1],
+                edges=state.edges,
+                tickets=facts,
+                order=None,
+            )
+            seen[key] = tally
+
+        return {
+            "format": "ballot-register/1",
+            "name": name,
+            "cut": cut.as_dict(),
+            "proposals": proposal_list,
+            "pairs": [seen[key] for key in sorted(seen)],
+            "ticket_count": len(facts),
+            "note": (
+                "Votes are distance-only: the shorter upward path wins, equal "
+                "distance abstains, reachable beats unreachable, and each "
+                "ticket casts exactly one vote. The chair order is not part "
+                "of this register."
+            ),
+        }
+
+    def publish_register(
+        self,
+        targets: Sequence[str],
+        pairs: Sequence[Sequence[str]],
+        *,
+        name: str | None = None,
+        register_id: str | None = None,
+        snapshot: Cut | None = None,
+    ) -> dict[str, Any]:
+        payload = self.build_register(
+            targets, pairs, name=name, snapshot=snapshot
+        )
+        register_id = register_id or "REG-" + _sha(payload)[:16]
+        created_at = _utc_now()
+        with self._write_lock, _Transaction(self.conn):
+            existing = self.conn.execute(
+                "SELECT payload FROM registers WHERE register_id=?",
+                (register_id,),
+            ).fetchone()
+            if existing is not None:
+                if json.loads(existing["payload"]) != payload:
+                    raise ProductError(
+                        f"register {register_id!r} already exists with different content"
+                    )
+            else:
+                self.conn.execute(
+                    "INSERT INTO registers"
+                    "(register_id, name, catalog_revision, fact_revision,"
+                    " fact_watermark, created_at, payload)"
+                    " VALUES(?,?,?,?,?,?,?)",
+                    (
+                        register_id,
+                        name,
+                        payload["cut"]["catalog_revision"],
+                        payload["cut"]["fact_revision"],
+                        int(payload["cut"]["fact_watermark"]),
+                        created_at,
+                        _json_dump(payload),
+                    ),
+                )
+        return {
+            "register_id": register_id,
+            "created_at": created_at,
+            "payload": payload,
+        }
+
+    def get_register(self, register_id: str) -> dict[str, Any]:
+        row = self.conn.execute(
+            "SELECT * FROM registers WHERE register_id=?", (register_id,)
+        ).fetchone()
+        if row is None:
+            raise ProductError(f"unknown register {register_id!r}")
+        return {
+            "register_id": row["register_id"],
+            "name": row["name"],
+            "created_at": row["created_at"],
+            "payload": json.loads(row["payload"]),
+        }
+
+    def list_registers(self) -> list[dict[str, Any]]:
+        rows = self.conn.execute(
+            "SELECT register_id, name, catalog_revision, fact_revision,"
+            " fact_watermark, created_at FROM registers"
+            " ORDER BY created_at, register_id"
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    # ------------------------------------------------------------- settlement
+    def _pair_outcomes(
+        self,
+        proposals: Sequence[str],
+        pairs: Sequence[Sequence[str]],
+        *,
+        register: dict[str, Any] | None,
+        snapshot: Cut | None,
+    ) -> tuple[dict[str, dict[str, Any]], Cut]:
+        """Resolve every pair's distance-vote winner at one cut."""
+
+        proposal_set = set(proposals)
+        wanted: list[str] = []
+        normalised: list[tuple[str, str]] = []
+        for raw in pairs:
+            if len(raw) != 2:
+                raise StoreError(f"a pair must name two proposals: {raw!r}")
+            a, b = str(raw[0]), str(raw[1])
+            if a == b:
+                raise StoreError(f"a proposal cannot be paired with itself: {a!r}")
+            for side in (a, b):
+                if side not in proposal_set:
+                    raise StoreError(
+                        f"pair {a}/{b} references {side!r}, not a proposal"
+                    )
+            key = self._pair_id(a, b)
+            if key not in wanted:
+                wanted.append(key)
+                normalised.append(tuple(key.split("|")))
+
+        if register is not None:
+            cut = Cut(
+                catalog_revision=register["cut"]["catalog_revision"],
+                fact_revision=register["cut"]["fact_revision"],
+                fact_watermark=int(register["cut"]["fact_watermark"]),
+            )
+            recorded = {
+                self._pair_id(pair["left"], pair["right"]): pair
+                for pair in register["pairs"]
+            }
+            outcomes: dict[str, dict[str, Any]] = {}
+            for key in wanted:
+                if key not in recorded:
+                    raise StoreError(
+                        f"register has no frozen result for pair {key!r}"
+                    )
+                pair = recorded[key]
+                outcomes[key] = {
+                    "left": pair["left"],
+                    "right": pair["right"],
+                    "winner": pair["winner"],
+                    "loser": pair["loser"],
+                    "left_votes": pair["left_votes"],
+                    "right_votes": pair["right_votes"],
+                    "abstentions": pair["abstentions"],
+                    "contested": pair["contested"],
+                    "resolved_by": pair["resolved_by"],
+                    "from_register": True,
+                }
+            return outcomes, cut
+
+        state, facts, cut = self.read_snapshot(snapshot)
+        outcomes = {}
+        for key, (a, b) in zip(wanted, normalised):
+            tally = ballot.tally_pair(
+                a, b, edges=state.edges, tickets=facts, order=None
+            )
+            outcomes[key] = {
+                "left": tally["left"],
+                "right": tally["right"],
+                "winner": tally["winner"],
+                "loser": tally["loser"],
+                "left_votes": tally["left_votes"],
+                "right_votes": tally["right_votes"],
+                "abstentions": tally["abstentions"],
+                "contested": tally["contested"],
+                "resolved_by": tally["resolved_by"],
+                "from_register": False,
+            }
+        return outcomes, cut
+
+    def settle(
+        self,
+        target: str,
+        proposals: Sequence[str],
+        pairs: Sequence[Sequence[str]],
+        *,
+        costs: dict[str, int | None] | None = None,
+        forbidden: Sequence[Sequence[str]] | None = None,
+        order: Sequence[str] | None = None,
+        register: str | dict[str, Any] | None = None,
+        snapshot: Cut | None = None,
+        name: str | None = None,
+        persist: bool = False,
+    ) -> dict[str, Any]:
+        """Cheapest legal knockout agenda that leaves ``target`` tabled.
+
+        ``pairs`` lists the candidate pairs (each with its staging ``cost``,
+        default 0) and ``forbidden`` names pairs the venue does not allow.
+        ``order`` is the selected chair order, consulted only to break a tie
+        between the two surviving proposals.  Pass ``register`` (an id or a
+        payload) to vote strictly from a frozen register; otherwise the vote
+        is computed from the current cut (or ``snapshot``).
+        """
+
+        proposal_list = list(dict.fromkeys(str(p) for p in proposals))
+        if target not in proposal_list:
+            raise StoreError(f"target {target!r} is not one of the proposals")
+        if len(proposal_list) < 2:
+            raise StoreError("settlement needs at least two proposals")
+
+        if isinstance(register, str):
+            register_payload: dict[str, Any] | None = self.get_register(register)[
+                "payload"
+            ]
+        elif isinstance(register, dict):
+            register_payload = register
+        else:
+            register_payload = None
+
+        outcomes, cut = self._pair_outcomes(
+            proposal_list, pairs, register=register_payload, snapshot=snapshot
+        )
+
+        forbidden_ids = {
+            self._pair_id(str(a), str(b)) for a, b in (forbidden or [])
+        }
+        unknown_forbidden = forbidden_ids - set(outcomes)
+        if unknown_forbidden:
+            raise StoreError(
+                "forbidden pair(s) are not among the requested pairs: "
+                + ", ".join(sorted(unknown_forbidden))
+            )
+        cost_map: dict[str, int | None] = {}
+        if costs is not None:
+            unknown_costs = set(costs) - set(outcomes)
+            if unknown_costs:
+                raise StoreError(
+                    "cost(s) given for pairs that were not requested: "
+                    + ", ".join(sorted(unknown_costs))
+                )
+        for key, outcome in outcomes.items():
+            if key in forbidden_ids:
+                cost_map[key] = None
+                continue
+            raw_cost = 0 if costs is None else costs.get(key, 0)
+            if not isinstance(raw_cost, int) or isinstance(raw_cost, bool):
+                raise StoreError(f"cost for pair {key!r} must be an integer")
+            if raw_cost < 0:
+                raise StoreError(f"cost for pair {key!r} must be non-negative")
+            cost_map[key] = raw_cost
+
+        table: dict[tuple[str, str], dict[str, Any]] = {}
+        for key, outcome in outcomes.items():
+            left, right = outcome["left"], outcome["right"]
+            table[(left, right) if left < right else (right, left)] = {
+                "left": left,
+                "right": right,
+                "winner": outcome["winner"],
+                "loser": outcome["loser"],
+                "cost": cost_map[key],
+                "left_votes": outcome["left_votes"],
+                "right_votes": outcome["right_votes"],
+                "abstentions": outcome["abstentions"],
+                "contested": outcome["contested"],
+                "from_register": outcome["from_register"],
+            }
+
+        result = agenda.cheapest_agenda(
+            target, proposal_list, table, order=order
+        )
+        result["name"] = name
+        result["cut"] = cut.as_dict()
+        result["chair_order"] = list(order) if order is not None else None
+        result["from_register"] = register_payload is not None
+        result["pairs"] = [
+            {
+                "left": table[key]["left"],
+                "right": table[key]["right"],
+                "winner": table[key]["winner"],
+                "cost": table[key]["cost"],
+                "left_votes": table[key]["left_votes"],
+                "right_votes": table[key]["right_votes"],
+                "abstentions": table[key]["abstentions"],
+                "contested": table[key]["contested"],
+                "forbidden": table[key]["cost"] is None,
+            }
+            for key in sorted(table)
+        ]
+
+        result["format"] = "agenda-settlement/1"
+
+        if persist:
+            settlement_id = "SET-" + _sha(result)[:16]
+            result["settlement_id"] = settlement_id
+            with self._write_lock, _Transaction(self.conn):
+                existing = self.conn.execute(
+                    "SELECT payload FROM settlements WHERE settlement_id=?",
+                    (settlement_id,),
+                ).fetchone()
+                if existing is None:
+                    self.conn.execute(
+                        "INSERT INTO settlements"
+                        "(settlement_id, target, name, created_at, payload)"
+                        " VALUES(?,?,?,?,?)",
+                        (
+                            settlement_id,
+                            target,
+                            name,
+                            _utc_now(),
+                            _json_dump(result),
+                        ),
+                    )
+        return result
+
+    def get_settlement(self, settlement_id: str) -> dict[str, Any]:
+        row = self.conn.execute(
+            "SELECT * FROM settlements WHERE settlement_id=?", (settlement_id,)
+        ).fetchone()
+        if row is None:
+            raise ProductError(f"unknown settlement {settlement_id!r}")
+        return {
+            "settlement_id": row["settlement_id"],
+            "target": row["target"],
+            "name": row["name"],
+            "created_at": row["created_at"],
+            "payload": json.loads(row["payload"]),
+        }
 
     # -------------------------------------------------------------- products
     def build_product(
