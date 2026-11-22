@@ -15,3 +15,11 @@ class PlanStoreError(ValueError):
 
 class BatchError(ValueError):
     """批次预检失败、批次不可变约束被违反等执行前错误。"""
+
+
+class ChannelError(ValueError):
+    """通道定义不合法、与已发布计划核名不符，或逐跳试换输入不合法。"""
+
+
+class PlanningError(ValueError):
+    """周度选道/选单输入不合法（预算、订单、限额等）。"""

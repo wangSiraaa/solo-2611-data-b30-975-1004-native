@@ -9,9 +9,11 @@
 """
 from .compiler import CompiledTemplate, Parameter, TemplateCompileError, compile_template, make_plan
 from .bindings import BindingError, bind_parameters, decode_value, encode_json_value
-from .errors import BatchError, PlanStoreError
+from .errors import BatchError, ChannelError, PlanningError, PlanStoreError
 from .plan_store import PLAN_FORMAT, PlanStore, validate_plan
 from .executor import BatchExecutor
+from .channels import Channel, ChannelCatalog, HopResult, MAX_REVISIONS, typed_equal
+from .planner import OrderEvaluation, WeeklyLedger, WeeklyPlanner
 
 __all__ = [
     "CompiledTemplate",
@@ -24,9 +26,19 @@ __all__ = [
     "decode_value",
     "encode_json_value",
     "BatchError",
+    "ChannelError",
+    "PlanningError",
     "PlanStoreError",
     "PLAN_FORMAT",
     "PlanStore",
     "validate_plan",
     "BatchExecutor",
+    "Channel",
+    "ChannelCatalog",
+    "HopResult",
+    "MAX_REVISIONS",
+    "typed_equal",
+    "OrderEvaluation",
+    "WeeklyLedger",
+    "WeeklyPlanner",
 ]

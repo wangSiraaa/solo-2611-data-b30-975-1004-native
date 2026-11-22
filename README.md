@@ -10,12 +10,16 @@ sql_param/
   bindings.py    值解码（null/int64/str/bytes/$bytes）与按出现顺序绑定
   plan_store.py  sql-param-plan/v1 计划发布、重放校验、持久化与公开格式校验
   executor.py    固定修订 → 整批预检 → 单事务依次执行 → 回执落盘
+  channels.py    转换通道、按实际计划核名、模板室逐跳试换与路径枚举（不连库）
+  planner.py     周度选道/选单（16 通道位掩码精确穷举）与重送核对台账
   errors.py      统一异常类型
 cli/
   publish_plan.py   独立 CLI：发布单个模板为计划文件
   run_batch.py      独立 CLI：读取批次 JSON 执行并输出回执路径
-demo_run.py        读取 materials/717 的完整端到端驱动（含与材料 plan_reader.py 互操作）
-tests/             39 个 unittest 用例
+  plan_week.py      独立 CLI：周度选道/选单规划落盘、重送订单核对
+demo_run.py            读取 materials/717 的完整端到端驱动（含与材料 plan_reader.py 互操作）
+demo_run_channels.py   转换通道 + 周度规划 + SQLite 落库 + 重送的端到端驱动
+tests/                 79 个 unittest 用例
 ```
 
 ## 词法规则（为什么不能用正则替换）
@@ -92,6 +96,51 @@ tests/             39 个 unittest 用例
 4. 回执中的 bytes 以 `{"$bytes": hex}` 表示；`ordered_values` 按计划参数出现顺序
    （含重复名字），与 `plan_reader.py` 输出语义一致。
 
+## 转换通道与逐跳试换（模板室）
+
+柜台仍把订单送给自己认识的旧修订。`channels.py` 把一条实际旧单逐站换成目标修订的
+绑定，**全程不连接订单库**，只对照 PlanStore 里两端已发布计划核名。
+
+- 通道是固定两端已发布计划的有向边，**只通往更高修订**，因此通道图是 DAG；
+  同一对修订之间可有多条并行通道（不同映射策略），各自独立计费。
+- 通道为每个**目标参数**指明一个或多个来源名；多源时该单各值必须**同类型且相等**
+  （`typed_equal`：null/int/str/bytes 四类互不混同，同内容 str 与 bytes 不相等）。
+- 一个来源名可供多个目标；来源名必须真实存在于来源计划（注释里的 `:fake`、字符串
+  字面量 `':k'` 都不算参数），且所有来源名必须被使用；目标名必须恰为目标计划的
+  全部不同参数名。同一通道对甲单可用、对乙单可能不可用，取决于该单实际值。
+- `ChannelCatalog.try_hop` 返回 `HopResult`：成功带回每目标解析值与目标绑定，失败
+  明确给出失败处（哪个目标、哪些来源、什么类型/值分歧）。
+- `enumerate_paths` 枚举从来源修订到目标修订的全部成功完整路径（按跳数、通道 id
+  排序），逐跳带回解析值与最终绑定；`checks` 非空时只保留最终绑定与随单声明逐字段
+  typed-equal 的路径——同一订单两条路径得到不同目标绑定时，柜台只允许交付声明值。
+- 限额：至多 **16 条可购通道、12 个修订**。
+
+## 周度选道/选单（运行中心）
+
+`planner.py` 的 `WeeklyPlanner.plan_week` 接收带编号、优先分的订单与固定预算。
+通道开通费按不同通道只付一次，不按订单重复。目标：可执行订单总分最高，同分费用最低，
+再同取最小通道掩码（跨进程可复现）。
+
+- 通道按 id 排序各占一个二进制位，2^K（K ≤ 16，至多 65536）个子集**精确穷举**，
+  不做启发式近似；费用走子集 DP。
+- 每张订单先枚举全部成功路径并归纳为“最小通道掩码”集合；订单可由子集 S 执行 ⇔
+  存在最小掩码 m ⊆ S。同形订单（最小掩码集合相同）合并为一组，权重为组内优先分之和，
+  用大整数超集 zeta 闭包一次性求整组可行子集——上千同形单 × 16 通道在毫秒级完成。
+- 规划回执 `sql-param-weekly-plan/v1` 含：购买的通道、费用、总分、每张订单的
+  accepted/rejected 与完整 `route`（逐跳通道 id、两端修订、解析值、最终绑定），
+  可还原整条转换链；被拒订单区分“图上无路/核对不过”与“有路但本周没买”。
+- `build_executor_items` 把中选订单翻译为现有 SQLite 批次条目（固定目标修订 +
+  实际绑定）；业务写失败仍由执行器单事务整批撤回，回执落盘为 rolled_back。
+- `WeeklyLedger` 是周内重送台账（原子写 JSON）：记录每编号订单的实质内容指纹与
+  原裁决；原样重送可核原结果（含原路由），改值重送明确报 `same_payload=false`。
+
+CLI：
+
+```bash
+python -m cli.plan_week <store_dir> <out_dir> weekly_request.json
+python -m cli.plan_week --verify <out_dir>/weekly-ledger.json <week_id> resend_order.json
+```
+
 ## 使用示例
 
 ```python
@@ -116,9 +165,32 @@ python -m cli.run_batch  ./workdir/store ./workdir/notes.db ./workdir/receipts \
         b-ok batch.json
 ```
 
+转换通道与周度规划（样例：r1(a,b) → r2(k) → r3(x,y)，另加 r1→r3 直达）：
+
+```python
+from sql_param import Channel, ChannelCatalog, PlanStore, WeeklyPlanner, BatchExecutor
+
+store = PlanStore("./workdir/store")
+catalog = ChannelCatalog(store, "ord", [Channel.from_dict(c) for c in [
+    {"channel_id": "c12", "source_revision": 1, "target_revision": 2, "fee": 1,
+     "mapping": {"id": ["id"], "k": ["a", "b"]}},
+    {"channel_id": "c23", "source_revision": 2, "target_revision": 3, "fee": 1,
+     "mapping": {"id": ["id"], "x": ["k"], "y": ["k"]}},
+    {"channel_id": "c13", "source_revision": 1, "target_revision": 3, "fee": 4,
+     "mapping": {"id": ["id"], "x": ["a"], "y": ["b"]}},
+]])
+plan = WeeklyPlanner(catalog).plan_week("W1", 2, [{
+    "order_id": "S-1", "source_revision": 1, "target_revision": 3, "priority": 2,
+    "bindings": {"id": "id-1", "a": 3, "b": 3}, "checks": {"x": 3},
+}])
+receipt = BatchExecutor(store, db_path, receipts_dir).execute_batch(
+    "W1", WeeklyPlanner(catalog).build_executor_items(plan))
+```
+
 ## 验证
 
 ```bash
-python3 -m unittest discover -s tests -v   # 39 个用例
+python3 -m unittest discover -s tests -v   # 79 个用例（含随机对拍暴力枚举）
 python3 demo_run.py                         # 材料全流程 + plan_reader 互操作
+python3 demo_run_channels.py                # 通道/周度规划/落库/重送全流程
 ```
