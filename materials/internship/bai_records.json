@@ -1,0 +1,8 @@
+{
+  "student_id": "BAI",
+  "revision": 1,
+  "records": [
+    {"record_id": "RG", "external_course": "EXT_G", "points": 3},
+    {"record_id": "RD", "external_course": "EXT_DUAL", "points": 3}
+  ]
+}

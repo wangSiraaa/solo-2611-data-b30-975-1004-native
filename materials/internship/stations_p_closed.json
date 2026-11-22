@@ -1,0 +1,7 @@
+{
+  "format": "station-profile/1",
+  "stations": [
+    {"station_id": "P", "quota": 0, "ranking": ["BAI", "QING"], "closed": true},
+    {"station_id": "Q", "quota": 1, "ranking": ["QING", "BAI"], "closed": false}
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "format": "student-preferences/1",
+  "preferences": [
+    {"student_id": "QING", "stations": ["P", "Q"]},
+    {"student_id": "BAI", "stations": ["Q", "P"]}
+  ]
+}

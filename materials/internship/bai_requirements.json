@@ -1,0 +1,7 @@
+{
+  "request_id": "REQ_GRAD_BAI",
+  "revision": 1,
+  "groups": [
+    {"group_id": "GG", "allowed_categories": ["G"], "minimum_points": 3}
+  ]
+}

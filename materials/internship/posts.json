@@ -1,0 +1,7 @@
+{
+  "format": "internship-posts/1",
+  "posts": [
+    {"post_id": "P", "accepted_categories": ["P"], "required_points": 3},
+    {"post_id": "Q", "accepted_categories": ["Q"], "required_points": 3}
+  ]
+}

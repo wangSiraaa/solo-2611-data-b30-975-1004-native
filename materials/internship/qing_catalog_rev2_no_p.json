@@ -1,0 +1,13 @@
+{
+  "format": "course-catalog/1",
+  "revision": 2,
+  "courses": [
+    {"course_id": "LC_G", "categories": ["G"]},
+    {"course_id": "LC_P", "categories": ["P"]},
+    {"course_id": "LC_Q", "categories": ["Q"]}
+  ],
+  "equivalences": {
+    "EXT_G": ["LC_G"],
+    "EXT_DUAL": ["LC_Q"]
+  }
+}

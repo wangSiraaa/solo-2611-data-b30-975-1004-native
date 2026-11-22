@@ -15,4 +15,4 @@ authors = [{name = "gradaudit contributors"}]
 gradaudit = "gradaudit.cli:main"
 
 [tool.setuptools]
-packages = ["gradaudit"]
+packages = ["gradaudit", "gradaudit.placement"]

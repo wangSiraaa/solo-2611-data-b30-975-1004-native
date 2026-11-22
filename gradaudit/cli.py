@@ -21,9 +21,21 @@ from typing import Any, Optional
 
 from .errors import GradAuditError
 from .library import Store
-from .model import parse_catalog, parse_records, parse_requirements, parse_plan
+from .model import parse_catalog, parse_records, parse_requirements
+from .placement import (
+    build_matching_input,
+    evaluate_eligibility,
+    parse_posts,
+    parse_preferences,
+    parse_review,
+    parse_stations,
+    parse_subsidies,
+    solve_matching,
+    verify_review,
+    verify_roster,
+)
 from .solver import solve
-from .verify import verify_plan, verify_plan_document
+from .verify import verify_plan_document
 
 
 def _load(path: str) -> Any:
@@ -165,6 +177,67 @@ def cmd_points(args) -> int:
 
 
 # --------------------------------------------------------------------------- #
+# placement commands (internship layer)
+# --------------------------------------------------------------------------- #
+def cmd_placement_review(args) -> int:
+    catalog, records, requirements = _inputs(args)
+    posts = parse_posts(_load(args.posts))
+    if args.post not in posts:
+        _dump({"error": {"code": "unknown_post", "message": f"post {args.post!r} is not defined"}})
+        return 2
+    result = evaluate_eligibility(catalog, records, requirements, posts[args.post])
+    doc = result.as_document()
+    _dump(doc)
+    if args.emit_review:
+        with open(args.emit_review, "w", encoding="utf-8") as fh:
+            json.dump(doc, fh, ensure_ascii=False, indent=2)
+            fh.write("\n")
+    return 0 if result.decision == "eligible" else 1
+
+
+def cmd_placement_verify_review(args) -> int:
+    catalog, records, requirements = _inputs(args)
+    posts = parse_posts(_load(args.posts))
+    result = verify_review(_load(args.review), catalog, records, requirements, posts)
+    _dump(result.as_dict())
+    return 0 if result.accepted else 1
+
+
+def cmd_placement_match(args) -> int:
+    stations = parse_stations(_load(args.stations))
+    preferences = parse_preferences(
+        _load(args.preferences),
+        known_students=None,
+        known_stations=frozenset(stations),
+    )
+    subsidies = parse_subsidies(_load(args.subsidies), known_stations=frozenset(stations))
+    reviews = [parse_review(_load(path)) for path in args.reviews]
+    inp = build_matching_input(preferences, stations, reviews, subsidies)
+    result = solve_matching(inp)
+    doc = result.as_document(inp)
+    _dump(doc)
+    if args.emit_roster:
+        with open(args.emit_roster, "w", encoding="utf-8") as fh:
+            json.dump(doc, fh, ensure_ascii=False, indent=2)
+            fh.write("\n")
+    return 0 if result.stable else 1
+
+
+def cmd_placement_verify_roster(args) -> int:
+    stations = parse_stations(_load(args.stations))
+    preferences = parse_preferences(
+        _load(args.preferences),
+        known_students=None,
+        known_stations=frozenset(stations),
+    )
+    subsidies = parse_subsidies(_load(args.subsidies), known_stations=frozenset(stations))
+    reviews = [parse_review(_load(path)) for path in args.reviews]
+    result = verify_roster(_load(args.roster), preferences, stations, subsidies, reviews)
+    _dump(result.as_dict())
+    return 0 if result.accepted else 1
+
+
+# --------------------------------------------------------------------------- #
 # parser
 # --------------------------------------------------------------------------- #
 def build_parser() -> argparse.ArgumentParser:
@@ -252,6 +325,43 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("preparation_id")
     sp.add_argument("--db", default="gradaudit.sqlite3")
     sp.set_defaults(func=cmd_points)
+
+    # ------------------------------------------------------------------ #
+    # internship placement
+    # ------------------------------------------------------------------ #
+    sp = sub.add_parser("placement-review",
+                        help="joint post/graduation eligibility review for one student and one post")
+    add_inputs(sp)
+    sp.add_argument("--posts", required=True, help="internship-posts/1 JSON file")
+    sp.add_argument("--post", required=True, help="post_id to review")
+    sp.add_argument("--emit-review", help="optional path to write the internship-review/1 document")
+    sp.set_defaults(func=cmd_placement_review)
+
+    sp = sub.add_parser("placement-verify-review",
+                        help="independently verify an internship-review/1 decision")
+    add_inputs(sp)
+    sp.add_argument("--posts", required=True)
+    sp.add_argument("--review", required=True)
+    sp.set_defaults(func=cmd_placement_verify_review)
+
+    sp = sub.add_parser("placement-match",
+                        help="exact stable matching: most placements, then minimum subsidy")
+    sp.add_argument("--stations", required=True, help="station-profile/1 JSON file")
+    sp.add_argument("--preferences", required=True, help="student-preferences/1 JSON file")
+    sp.add_argument("--subsidies", required=True, help="commute-subsidies/1 JSON file")
+    sp.add_argument("--reviews", required=True, nargs="+",
+                    help="one or more internship-review/1 JSON files")
+    sp.add_argument("--emit-roster", help="optional path to write the internship-roster/1 document")
+    sp.set_defaults(func=cmd_placement_match)
+
+    sp = sub.add_parser("placement-verify-roster",
+                        help="independently verify an internship-roster/1 roster and its optimum")
+    sp.add_argument("--roster", required=True)
+    sp.add_argument("--stations", required=True)
+    sp.add_argument("--preferences", required=True)
+    sp.add_argument("--subsidies", required=True)
+    sp.add_argument("--reviews", required=True, nargs="+")
+    sp.set_defaults(func=cmd_placement_verify_roster)
 
     return p
 

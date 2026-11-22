@@ -1,0 +1,7 @@
+{
+  "format": "commute-subsidies/1",
+  "subsidies": [
+    {"station_id": "P", "amounts": {"QING": 0, "BAI": 1}},
+    {"station_id": "Q", "amounts": {"QING": 1, "BAI": 0}}
+  ]
+}
