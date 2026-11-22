@@ -51,3 +51,19 @@ class NoCoverError(DeliveryError):
     def __init__(self, message: str, result: Optional[object] = None) -> None:
         super().__init__(message)
         self.result = result
+
+
+class TextbookError(DeliveryError):
+    """Base class for contrastive-textbook / dictionary / tile-bag problems."""
+
+
+class TextbookContradiction(TextbookError):
+    """The package cannot support any document-wide two-way dictionary."""
+
+
+class TextbookLimitExceeded(TextbookError):
+    """A problem exceeded the published limits (<=24 pairs, <=22 exercises)."""
+
+
+class ExerciseContradiction(TextbookError):
+    """An exercise uses words outside the booklet vocabulary."""

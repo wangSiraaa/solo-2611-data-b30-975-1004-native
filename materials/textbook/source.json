@@ -1,0 +1,8 @@
+{
+  "document_id": "PQDOC",
+  "revision": 1,
+  "segments": [
+    {"segment_id": "P", "revision": 1, "text": "p"},
+    {"segment_id": "Q", "revision": 1, "text": "q"}
+  ]
+}

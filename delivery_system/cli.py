@@ -17,6 +17,13 @@ from .delivery_repository import DeliveryRepository
 from .errors import DeliveryError, NoCoverError
 from .package_io import read_package, validate_package, write_package
 from .source_catalog import PublishedSourceReader, SourceCatalog
+from .textbook import (
+    DictionarySpace,
+    Exercise,
+    analyze_package,
+    package_supply,
+    solve_allocation,
+)
 
 
 def _default_document(catalog: Optional[SourceCatalog]) -> Optional[str]:
@@ -430,7 +437,7 @@ def cmd_run_operations(args: argparse.Namespace) -> int:
 
 
 def cmd_demo(args: argparse.Namespace) -> int:
-    """End-to-end run over materials/753 using a throw-away temp directory."""
+    """End-to-end run over the bundled materials using a throw-away directory."""
 
     import tempfile
 
@@ -440,6 +447,72 @@ def cmd_demo(args: argparse.Namespace) -> int:
         report = run_demo(tmp)
     _emit(report)
     return 0 if report["ok"] else 3
+
+
+def cmd_book_demo(args: argparse.Namespace) -> int:
+    """Reproduce the bundled p/q contrastive-textbook + tile-board scenario."""
+
+    import tempfile
+
+    from .textbook_demo import run_textbook_demo
+
+    with tempfile.TemporaryDirectory() as tmp:
+        report = run_textbook_demo(tmp)
+    _emit(report)
+    return 0 if report["ok"] else 3
+
+
+def cmd_book(args: argparse.Namespace) -> int:
+    """Build the contrastive booklet from a *published* package file.
+
+    The source is read through the read-only published reader and the package
+    must still validate; the booklet pairs each delivered chunk's covered
+    source-word multiset with its target-word multiset.
+    """
+
+    content = read_package(args.package)
+    problems = validate_package(content)
+    if problems:
+        _emit({"ok": False, "problems": problems})
+        return 4
+    if not os.path.exists(args.source_db):
+        _emit({"ok": False, "problems": ["source database is missing"]})
+        return 4
+    product = PublishedSourceReader(args.source_db).published_product(
+        content["document_id"]
+    )
+    book = analyze_package(product, content)
+    space = DictionarySpace(book)
+    payload: dict[str, Any] = {
+        "ok": True,
+        "book": book.to_dict(),
+        "dictionary": {
+            "consistent": space.consistent,
+            "unique": space.unique,
+            "witness": space.dictionary,
+            "contradiction": space.contradiction,
+            "images": {w: list(space.image_of(w)) for w in book.source_vocab}
+            if space.consistent
+            else {},
+        },
+        "supply": package_supply(book) if space.consistent else {},
+    }
+    if space.consistent and args.exercises:
+        with open(args.exercises, encoding="utf-8") as fh:
+            exercises = [
+                Exercise.from_dict(json.loads(line))
+                for line in fh
+                if line.strip()
+            ]
+        supply = None
+        if args.supply:
+            with open(args.supply, encoding="utf-8") as fh:
+                supply = {str(k): int(v) for k, v in json.load(fh).items()}
+        payload["allocation"] = solve_allocation(
+            book, space, exercises, supply
+        ).to_dict()
+    _emit(payload)
+    return 0 if space.consistent else 5
 
 
 # ----------------------------------------------------------------------
@@ -516,7 +589,17 @@ def build_parser() -> argparse.ArgumentParser:
     sp = add("run-operations", cmd_run_operations, "replay an operations.jsonl")
     sp.add_argument("--operations", required=True)
 
+    sp = add("book", cmd_book, "build the contrastive booklet from a package file")
+    sp.add_argument("package")
+    sp.add_argument(
+        "--exercises", default=None, help="JSONL of {exercise_id,table,source_words,points}"
+    )
+    sp.add_argument(
+        "--supply", default=None, help="JSON {target_word: copies} overriding the bundle supply"
+    )
+
     add("demo", cmd_demo, "run the end-to-end materials/753 demo")
+    add("book-demo", cmd_book_demo, "run the bundled contrastive-textbook demo")
     return p
 
 

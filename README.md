@@ -10,6 +10,9 @@ Python 3.11，SQLite。**两侧物理分离**：源段目录与交付仓各自�
 # 端到端跑完 materials/753 全部场景（含用只读客户端读新旧包）
 python3 run_demo.py
 
+# 对照课本 + 词典席 + 字牌板（p/q 全部结论）
+python3 -m delivery_system.cli book-demo
+
 # 仅验证真实包文件
 python3 materials/753/package_reader.py data/packages/PACK1.json
 python3 materials/753/package_reader.py data/packages/PACK2.json
@@ -17,6 +20,32 @@ python3 materials/753/package_reader.py data/packages/PACK2.json
 # 测试（标准库 unittest，无需 pytest）
 python3 -m unittest discover -s tests -v
 ```
+
+## 对照课本 / 词典席 / 字牌板
+
+`delivery_system/textbook.py` 用**已发布译包的实际快照**构造虚构对照课本：每个
+实际译块与其覆盖的全部原段词数配对，两侧只记空格分隔词的**多重集**（词序无关）。
+覆盖两段的译块是**一条** pair，不被任意切成两道。构建时会核对包的
+`source_snapshot` 与已发布源（身份 + 修订），并要求 chunks 精确复现快照；
+`verify_package_against_book` 拒绝「另一版本排出相同正文就借用旧分块」。
+
+- **词典席**（`DictionarySpace`）：全书一致、两词表一一对应的双射字典。
+  候选边由每块的「等词数」约束得出，再用二分图完美匹配判定可满足性；
+  `unique` 判断是否唯一（对称书可能有很多）。`image_of` 只返回**能扩成整本
+  字典**的像。`check_pairs` 对一批指定词对给出精确可行性与完整例证——两条
+  各自成立、合起来不成立的情形会被如实拒绝（无联合扩展）。存在矛盾的书
+  `consistent=False`，不得签给课堂。
+- **字牌板**（`TileAllocationProblem`）：练习列出该桌的原词多重集与正整数
+  分；每桌只接一张；字牌是**目标词**牌，库存来自保留译包的目标词总量，一张
+  实牌只进一袋（按种类合计需求约束）。因为要在**任一相容词典**下都能上课，
+  一张桌子对每个种类需备到「任一合法词典可能要求的最大份数」。按总分最高
+  选练习（≤22 张，≤24 对），并列按牌数、种类数、练习 id 确定性决胜；对未选
+  练习给出保住已选时至少哪种牌会短缺、缺多少。
+
+`materials/textbook/` 提供 p/q 数据；`book-demo` 复现全部结论：
+合译包可互换时只够一桌（3 分，甲要备 x、y 两种）、拆成单段译条后 5 分
+（各一种即可）、保留合译包各加至两张也 5 分，另演示两条单独成立却无法合取
+的词对请求。
 
 ## 目录结构
 
@@ -29,9 +58,12 @@ delivery_system/
   coverage.py            条目评估 + 精确覆盖区间 DP + 失败诊断
   delivery_repository.py 译文条目、覆盖计划、不可变发布包（独立 SQLite）
   package_io.py          translation-package/1 写入与结构/覆盖校验
-  cli.py / __main__.py   命令行
+  textbook.py            对照课本 / 词典席 / 字牌板（分析 + 精确求解）
+  textbook_demo.py       materials/textbook 的 p/q 端到端复现
+  cli.py / __main__.py   命令行（含 book / book-demo 子命令）
   demo.py                materials/753 端到端复现（调用官方 package_reader.py）
 tests/test_delivery.py   20 个测试：覆盖、过期、重组、不可变、规模
+tests/test_textbook.py   31 个测试：词数课本、词典席、字牌板、p/q、规模与形状
 ```
 
 ## 两侧的实质逻辑
