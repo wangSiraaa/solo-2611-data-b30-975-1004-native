@@ -17,8 +17,10 @@ from typing import Optional
 
 from .db import Database
 from .errors import BasketError
+from .furnace import FurnaceService
 from .ledger import AfterSalesLedger
 from .quote_service import QuoteService
+from .recycling import RecyclingService
 
 
 class Service:
@@ -28,6 +30,8 @@ class Service:
         self.db = Database(path, busy_timeout_ms=busy_timeout_ms)
         self.quotes = QuoteService(self.db)
         self.ledger = AfterSalesLedger(self.db)
+        self.recycling = RecyclingService(self.db)
+        self.furnace = FurnaceService(self.db)
 
     # quote surface -------------------------------------------------------
     def publish_snapshot(self, products=None, coupons=None, *, snapshot_id=None) -> str:
@@ -66,6 +70,35 @@ class Service:
 
     def audit_sales(self):
         return self.ledger.audit_sales()
+
+    # recycling surface -----------------------------------------------------
+    def register_process_sheet(self, sheet):
+        return self.recycling.register_sheet(sheet)
+
+    def get_sheet(self, sheet_id):
+        return self.recycling.get_sheet(sheet_id)
+
+    def sheets(self):
+        return self.recycling.sheets()
+
+    def run_recycling(self, batch_id):
+        return self.recycling.run_batch(batch_id)
+
+    def get_recycle_batch(self, batch_id):
+        return self.recycling.get_batch(batch_id)
+
+    def cakes(self, status=None):
+        return self.recycling.cakes(status)
+
+    def audit_recycling(self):
+        return self.recycling.audit()
+
+    # furnace surface -------------------------------------------------------
+    def run_furnace(self, run_id, orders):
+        return self.furnace.run(run_id, orders)
+
+    def get_furnace_run(self, run_id):
+        return self.furnace.get_run(run_id)
 
     # cross-cutting -------------------------------------------------------
     def run(self, plan):

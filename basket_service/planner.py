@@ -21,6 +21,13 @@ Supported ops::
     inventory          skus?
     audit_sales
     audit_inventory
+    register_process_sheet   sheet (UNIT per sku | GROUP per coupon_id)
+    run_recycling      batch_id
+    get_recycle_batch  batch_id
+    cakes              status?
+    audit_recycling
+    run_furnace        run_id, orders
+    get_furnace_run    run_id
 
 Any step may set ``"expect_error": <code>`` (string or list) to assert that the
 operation is rejected with that error code; the transcript then records a
@@ -144,6 +151,20 @@ def _execute(service, step: Mapping[str, Any], env: Mapping[str, Any]) -> Any:
         return service.audit_sales()
     if op == "audit_inventory":
         return service.audit_inventory()
+    if op == "register_process_sheet":
+        return service.register_process_sheet(_require(step, "sheet", op))
+    if op == "run_recycling":
+        return service.run_recycling(_require(step, "batch_id", op))
+    if op == "get_recycle_batch":
+        return service.get_recycle_batch(_require(step, "batch_id", op))
+    if op == "cakes":
+        return service.cakes(step.get("status"))
+    if op == "audit_recycling":
+        return service.audit_recycling()
+    if op == "run_furnace":
+        return service.run_furnace(_require(step, "run_id", op), _require(step, "orders", op))
+    if op == "get_furnace_run":
+        return service.get_furnace_run(_require(step, "run_id", op))
     raise PlanError(f"unknown op {op!r}", step_index=-1, step=step, transcript=[])
 
 

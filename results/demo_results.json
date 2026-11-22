@@ -338,6 +338,273 @@
         "successes": 1
       },
       "ok": true
+    },
+    {
+      "actual": [
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          0
+        ],
+        [
+          0,
+          2
+        ]
+      ],
+      "check": "recycling.main.cakes_are_r_w_m",
+      "expected": "R(2,0), W(0,2), M(1,1)",
+      "ok": true
+    },
+    {
+      "actual": 3,
+      "check": "recycling.main.manual_scrap_mints_nothing",
+      "expected": 3,
+      "ok": true
+    },
+    {
+      "actual": 5,
+      "check": "recycling.main.value_is_5",
+      "expected": 5,
+      "ok": true
+    },
+    {
+      "actual": [
+        {
+          "request_id": "rc-a-ret-m",
+          "sale_id": "SM",
+          "unit_id": "m1"
+        },
+        {
+          "request_id": "rc-a-ret-m",
+          "sale_id": "SM",
+          "unit_id": "m2"
+        }
+      ],
+      "check": "recycling.main.pink_burns_group_cake_m",
+      "expected": "M(1,1) from SM.m1+SM.m2",
+      "ok": true
+    },
+    {
+      "actual": {
+        "red_plate": [
+          {
+            "request_id": "rc-a-ret-r",
+            "sale_id": "SR",
+            "unit_id": "r1"
+          }
+        ],
+        "stock_remaining": [
+          {
+            "batch_no": "cake-u-63fad605d66a93a4",
+            "red": 0,
+            "white": 2
+          }
+        ]
+      },
+      "check": "recycling.main.red_burns_r_and_w_stays",
+      "expected": "R(2,0) from SR.r1; W left in stock",
+      "ok": true
+    },
+    {
+      "actual": "identical",
+      "check": "recycling.main.requisition_retry_replays",
+      "expected": "identical",
+      "ok": true
+    },
+    {
+      "actual": true,
+      "check": "recycling.main.audit_ok",
+      "expected": true,
+      "ok": true
+    },
+    {
+      "actual": {
+        "MA": 1,
+        "MB": 1,
+        "R": 10,
+        "W": 1
+      },
+      "check": "recycling.main.old_inventory_queries_unchanged",
+      "expected": "SCRAP bucket counts every scrapped unit incl. the manual 9",
+      "ok": true
+    },
+    {
+      "actual": [
+        {
+          "awaiting": [
+            "m2"
+          ],
+          "coupon_id": "PAIR",
+          "received": [
+            "m1"
+          ],
+          "sale_id": "SM"
+        }
+      ],
+      "check": "recycling.restock.group_stays_pending",
+      "expected": "only R and W cakes; pair tagged pending",
+      "ok": true
+    },
+    {
+      "actual": 3,
+      "check": "recycling.restock.value_is_3",
+      "expected": 3,
+      "ok": true
+    },
+    {
+      "actual": [
+        {
+          "cakes": [
+            {
+              "batch_no": "cake-u-63fad605d66a93a4",
+              "kind": "UNIT",
+              "red": 0,
+              "white": 2
+            },
+            {
+              "batch_no": "cake-u-7caffa141e2f62cc",
+              "kind": "UNIT",
+              "red": 2,
+              "white": 0
+            }
+          ],
+          "items": [
+            {
+              "request_id": "rc-b-ret-r",
+              "sale_id": "SR",
+              "unit_id": "r1"
+            },
+            {
+              "request_id": "rc-b-ret-w",
+              "sale_id": "SW",
+              "unit_id": "w1"
+            }
+          ],
+          "order_id": "pink",
+          "red": 2,
+          "red_fraction": [
+            1,
+            2
+          ],
+          "total": 4,
+          "value": 3,
+          "white": 2
+        }
+      ],
+      "check": "recycling.restock.plate_is_r_plus_w",
+      "expected": "R+W -> pink",
+      "ok": true
+    },
+    {
+      "actual": 3,
+      "check": "recycling.min4.value_is_3",
+      "expected": 3,
+      "ok": true
+    },
+    {
+      "actual": [
+        {
+          "batch_no": "cake-g-7f131df6e5debf5e",
+          "red": 1,
+          "white": 1
+        }
+      ],
+      "check": "recycling.min4.plate_is_r_plus_w_m_leftover",
+      "expected": "R+W -> pink(4); M(1,1) stays",
+      "ok": true
+    },
+    {
+      "actual": [
+        "pure-red",
+        "trap"
+      ],
+      "check": "recycling.min4.aggregate_cannot_be_scooped",
+      "expected": "2/3 red of 3 portions exists in the pool but in no whole-cake set",
+      "ok": true
+    },
+    {
+      "actual": [
+        {
+          "awaiting": [
+            "m2"
+          ],
+          "coupon_id": "PAIR",
+          "received": [
+            "m1"
+          ],
+          "sale_id": "SM"
+        }
+      ],
+      "check": "recycling.cross_day.tagged_until_complete",
+      "expected": "day 1: pending, no cake",
+      "ok": true
+    },
+    {
+      "actual": [
+        {
+          "batch_no": "cake-g-7f131df6e5debf5e",
+          "coupon_id": "PAIR",
+          "kind": "GROUP",
+          "loss": {
+            "red": 1,
+            "white": 1
+          },
+          "material": {
+            "red": 2,
+            "white": 2
+          },
+          "members": [
+            {
+              "recipe": {
+                "red": 1,
+                "white": 1
+              },
+              "request_id": "rc-d-ret-m1",
+              "sku": "MA",
+              "unit_id": "m1"
+            },
+            {
+              "recipe": {
+                "red": 1,
+                "white": 1
+              },
+              "request_id": "rc-d-ret-m2",
+              "sku": "MB",
+              "unit_id": "m2"
+            }
+          ],
+          "red": 1,
+          "sale_id": "SM",
+          "white": 1
+        }
+      ],
+      "check": "recycling.cross_day.completes_next_day",
+      "expected": "day 2: one group cake M(1,1)",
+      "ok": true
+    },
+    {
+      "actual": "identical",
+      "check": "recycling.cross_day.old_batch_replay_is_stable",
+      "expected": "identical",
+      "ok": true
+    },
+    {
+      "actual": {
+        "retry_same": true,
+        "value": 5
+      },
+      "check": "recycling.cross_day.requisition_retry_replays",
+      "expected": "identical plan, value 5",
+      "ok": true
+    },
+    {
+      "actual": true,
+      "check": "recycling.cross_day.audit_ok",
+      "expected": true,
+      "ok": true
     }
   ],
   "database": "/workspace/data/demo.db",
@@ -502,6 +769,249 @@
         "op": "register_sale",
         "quote": "$q_added",
         "sale_id": "S1"
+      },
+      {
+        "op": "register_process_sheet",
+        "sheet": {
+          "kind": "UNIT",
+          "recipe": {
+            "red": 2,
+            "white": 0
+          },
+          "sku": "R"
+        }
+      },
+      {
+        "op": "register_process_sheet",
+        "sheet": {
+          "kind": "UNIT",
+          "recipe": {
+            "red": 0,
+            "white": 2
+          },
+          "sku": "W"
+        }
+      },
+      {
+        "op": "register_process_sheet",
+        "sheet": {
+          "coupon_id": "PAIR",
+          "kind": "GROUP",
+          "loss": {
+            "red": 1,
+            "white": 1
+          },
+          "members": {
+            "MA": {
+              "red": 1,
+              "white": 1
+            },
+            "MB": {
+              "red": 1,
+              "white": 1
+            }
+          }
+        }
+      },
+      {
+        "coupons": [],
+        "op": "publish_snapshot",
+        "products": [
+          {
+            "price": 100,
+            "sku": "R"
+          }
+        ],
+        "snapshot_id": "rc-r"
+      },
+      {
+        "coupons": [],
+        "op": "publish_snapshot",
+        "products": [
+          {
+            "price": 100,
+            "sku": "W"
+          }
+        ],
+        "snapshot_id": "rc-w"
+      },
+      {
+        "coupons": [
+          {
+            "D": 50,
+            "coupon_id": "PAIR",
+            "requires": {
+              "MA": 1,
+              "MB": 1
+            }
+          }
+        ],
+        "op": "publish_snapshot",
+        "products": [
+          {
+            "price": 100,
+            "sku": "MA"
+          },
+          {
+            "price": 100,
+            "sku": "MB"
+          }
+        ],
+        "snapshot_id": "rc-m"
+      },
+      {
+        "basket": [
+          {
+            "price": 100,
+            "sku": "R",
+            "unit_id": "r1"
+          }
+        ],
+        "coupons": [],
+        "name": "rc_qr",
+        "op": "quote",
+        "request_id": "rc-qr",
+        "snapshot_id": "rc-r"
+      },
+      {
+        "basket": [
+          {
+            "price": 100,
+            "sku": "W",
+            "unit_id": "w1"
+          }
+        ],
+        "coupons": [],
+        "name": "rc_qw",
+        "op": "quote",
+        "request_id": "rc-qw",
+        "snapshot_id": "rc-w"
+      },
+      {
+        "basket": [
+          {
+            "price": 100,
+            "sku": "MA",
+            "unit_id": "m1"
+          },
+          {
+            "price": 100,
+            "sku": "MB",
+            "unit_id": "m2"
+          }
+        ],
+        "coupons": [],
+        "name": "rc_qm",
+        "op": "quote",
+        "request_id": "rc-qm",
+        "snapshot_id": "rc-m"
+      },
+      {
+        "op": "register_sale",
+        "quote": "$rc_qr",
+        "sale_id": "SR"
+      },
+      {
+        "op": "register_sale",
+        "quote": "$rc_qw",
+        "sale_id": "SW"
+      },
+      {
+        "op": "register_sale",
+        "quote": "$rc_qm",
+        "sale_id": "SM"
+      },
+      {
+        "grade": {
+          "r1": "SCRAP"
+        },
+        "op": "return",
+        "request_id": "rc-ret-r",
+        "sale_id": "SR",
+        "unit_ids": [
+          "r1"
+        ]
+      },
+      {
+        "grade": {
+          "w1": "SCRAP"
+        },
+        "op": "return",
+        "request_id": "rc-ret-w",
+        "sale_id": "SW",
+        "unit_ids": [
+          "w1"
+        ]
+      },
+      {
+        "grade": {
+          "m1": "SCRAP",
+          "m2": "SCRAP"
+        },
+        "op": "return",
+        "request_id": "rc-ret-m",
+        "sale_id": "SM",
+        "unit_ids": [
+          "m1",
+          "m2"
+        ]
+      },
+      {
+        "bucket": "SCRAP",
+        "event_id": "rc-manual-scrap",
+        "op": "adjust_inventory",
+        "quantity": 9,
+        "sku": "R"
+      },
+      {
+        "batch_id": "rc-b1",
+        "name": "rc_batch",
+        "op": "run_recycling"
+      },
+      {
+        "name": "rc_plan",
+        "op": "run_furnace",
+        "orders": [
+          {
+            "max_total": 4,
+            "min_total": 2,
+            "order_id": "pink",
+            "red_fraction": {
+              "max": [
+                1,
+                2
+              ],
+              "min": [
+                1,
+                2
+              ]
+            },
+            "value": 3
+          },
+          {
+            "max_total": 2,
+            "min_total": 2,
+            "order_id": "pure-red",
+            "red_fraction": {
+              "max": [
+                1,
+                1
+              ],
+              "min": [
+                1,
+                1
+              ]
+            },
+            "value": 2
+          }
+        ],
+        "run_id": "rc-f1"
+      },
+      {
+        "op": "audit_recycling"
+      },
+      {
+        "op": "inventory"
       }
     ]
   },
@@ -2095,6 +2605,642 @@
         "total_discount": 100
       }
     },
+    "recycling_cross_day": {
+      "audit": {
+        "checks": [
+          {
+            "check": "cake.cake-g-7f131df6e5debf5e.recomputes",
+            "detail": null,
+            "ok": true
+          },
+          {
+            "check": "cakes.item_rows_match_components",
+            "detail": null,
+            "ok": true
+          },
+          {
+            "check": "items.enter_at_most_one_batch",
+            "detail": null,
+            "ok": true
+          },
+          {
+            "check": "items.are_scrap_received_named_units",
+            "detail": null,
+            "ok": true
+          },
+          {
+            "check": "requisitions_reference_recorded_runs",
+            "detail": null,
+            "ok": true
+          }
+        ],
+        "ok": true
+      },
+      "database": "/workspace/data/demo_recycling.db",
+      "day1_batch": {
+        "batch_id": "rc-d-b1",
+        "cakes": [],
+        "ok": true,
+        "pending": [
+          {
+            "awaiting": [
+              "m2"
+            ],
+            "coupon_id": "PAIR",
+            "received": [
+              "m1"
+            ],
+            "sale_id": "SM"
+          }
+        ],
+        "problems": [],
+        "repeated": false,
+        "skipped": []
+      },
+      "day2_batch": {
+        "batch_id": "rc-d-b2",
+        "cakes": [
+          {
+            "batch_no": "cake-g-7f131df6e5debf5e",
+            "coupon_id": "PAIR",
+            "kind": "GROUP",
+            "loss": {
+              "red": 1,
+              "white": 1
+            },
+            "material": {
+              "red": 2,
+              "white": 2
+            },
+            "members": [
+              {
+                "recipe": {
+                  "red": 1,
+                  "white": 1
+                },
+                "request_id": "rc-d-ret-m1",
+                "sku": "MA",
+                "unit_id": "m1"
+              },
+              {
+                "recipe": {
+                  "red": 1,
+                  "white": 1
+                },
+                "request_id": "rc-d-ret-m2",
+                "sku": "MB",
+                "unit_id": "m2"
+              }
+            ],
+            "red": 1,
+            "sale_id": "SM",
+            "white": 1
+          }
+        ],
+        "ok": true,
+        "pending": [],
+        "problems": [],
+        "repeated": false,
+        "skipped": []
+      },
+      "furnace": {
+        "ok": true,
+        "orders": [
+          {
+            "max_total": 2,
+            "min_total": 2,
+            "order_id": "half",
+            "red_fraction": {
+              "max": [
+                1,
+                2
+              ],
+              "min": [
+                1,
+                2
+              ]
+            },
+            "value": 5
+          }
+        ],
+        "plates": [
+          {
+            "cakes": [
+              {
+                "batch_no": "cake-g-7f131df6e5debf5e",
+                "kind": "GROUP",
+                "red": 1,
+                "white": 1
+              }
+            ],
+            "items": [
+              {
+                "request_id": "rc-d-ret-m1",
+                "sale_id": "SM",
+                "unit_id": "m1"
+              },
+              {
+                "request_id": "rc-d-ret-m2",
+                "sale_id": "SM",
+                "unit_id": "m2"
+              }
+            ],
+            "order_id": "half",
+            "red": 1,
+            "red_fraction": [
+              1,
+              2
+            ],
+            "total": 2,
+            "value": 5,
+            "white": 1
+          }
+        ],
+        "repeated": false,
+        "run_id": "rc-d-f1",
+        "stock_remaining": [],
+        "total_value": 5,
+        "unfilled_orders": []
+      }
+    },
+    "recycling_main": {
+      "audit": {
+        "checks": [
+          {
+            "check": "cake.cake-g-7f131df6e5debf5e.recomputes",
+            "detail": null,
+            "ok": true
+          },
+          {
+            "check": "cake.cake-u-63fad605d66a93a4.recomputes",
+            "detail": null,
+            "ok": true
+          },
+          {
+            "check": "cake.cake-u-7caffa141e2f62cc.recomputes",
+            "detail": null,
+            "ok": true
+          },
+          {
+            "check": "cakes.item_rows_match_components",
+            "detail": null,
+            "ok": true
+          },
+          {
+            "check": "items.enter_at_most_one_batch",
+            "detail": null,
+            "ok": true
+          },
+          {
+            "check": "items.are_scrap_received_named_units",
+            "detail": null,
+            "ok": true
+          },
+          {
+            "check": "requisitions_reference_recorded_runs",
+            "detail": null,
+            "ok": true
+          }
+        ],
+        "ok": true
+      },
+      "batch": {
+        "batch_id": "rc-a-b1",
+        "cakes": [
+          {
+            "batch_no": "cake-g-7f131df6e5debf5e",
+            "coupon_id": "PAIR",
+            "kind": "GROUP",
+            "loss": {
+              "red": 1,
+              "white": 1
+            },
+            "material": {
+              "red": 2,
+              "white": 2
+            },
+            "members": [
+              {
+                "recipe": {
+                  "red": 1,
+                  "white": 1
+                },
+                "request_id": "rc-a-ret-m",
+                "sku": "MA",
+                "unit_id": "m1"
+              },
+              {
+                "recipe": {
+                  "red": 1,
+                  "white": 1
+                },
+                "request_id": "rc-a-ret-m",
+                "sku": "MB",
+                "unit_id": "m2"
+              }
+            ],
+            "red": 1,
+            "sale_id": "SM",
+            "white": 1
+          },
+          {
+            "batch_no": "cake-u-7caffa141e2f62cc",
+            "coupon_id": null,
+            "kind": "UNIT",
+            "recipe": {
+              "red": 2,
+              "white": 0
+            },
+            "red": 2,
+            "request_id": "rc-a-ret-r",
+            "sale_id": "SR",
+            "sku": "R",
+            "unit_id": "r1",
+            "white": 0
+          },
+          {
+            "batch_no": "cake-u-63fad605d66a93a4",
+            "coupon_id": null,
+            "kind": "UNIT",
+            "recipe": {
+              "red": 0,
+              "white": 2
+            },
+            "red": 0,
+            "request_id": "rc-a-ret-w",
+            "sale_id": "SW",
+            "sku": "W",
+            "unit_id": "w1",
+            "white": 2
+          }
+        ],
+        "ok": true,
+        "pending": [],
+        "problems": [],
+        "repeated": false,
+        "skipped": []
+      },
+      "furnace": {
+        "ok": true,
+        "orders": [
+          {
+            "max_total": 4,
+            "min_total": 2,
+            "order_id": "pink",
+            "red_fraction": {
+              "max": [
+                1,
+                2
+              ],
+              "min": [
+                1,
+                2
+              ]
+            },
+            "value": 3
+          },
+          {
+            "max_total": 2,
+            "min_total": 2,
+            "order_id": "pure-red",
+            "red_fraction": {
+              "max": [
+                1,
+                1
+              ],
+              "min": [
+                1,
+                1
+              ]
+            },
+            "value": 2
+          }
+        ],
+        "plates": [
+          {
+            "cakes": [
+              {
+                "batch_no": "cake-g-7f131df6e5debf5e",
+                "kind": "GROUP",
+                "red": 1,
+                "white": 1
+              }
+            ],
+            "items": [
+              {
+                "request_id": "rc-a-ret-m",
+                "sale_id": "SM",
+                "unit_id": "m1"
+              },
+              {
+                "request_id": "rc-a-ret-m",
+                "sale_id": "SM",
+                "unit_id": "m2"
+              }
+            ],
+            "order_id": "pink",
+            "red": 1,
+            "red_fraction": [
+              1,
+              2
+            ],
+            "total": 2,
+            "value": 3,
+            "white": 1
+          },
+          {
+            "cakes": [
+              {
+                "batch_no": "cake-u-7caffa141e2f62cc",
+                "kind": "UNIT",
+                "red": 2,
+                "white": 0
+              }
+            ],
+            "items": [
+              {
+                "request_id": "rc-a-ret-r",
+                "sale_id": "SR",
+                "unit_id": "r1"
+              }
+            ],
+            "order_id": "pure-red",
+            "red": 2,
+            "red_fraction": [
+              1,
+              1
+            ],
+            "total": 2,
+            "value": 2,
+            "white": 0
+          }
+        ],
+        "repeated": false,
+        "run_id": "rc-a-f1",
+        "stock_remaining": [
+          {
+            "batch_no": "cake-u-63fad605d66a93a4",
+            "red": 0,
+            "white": 2
+          }
+        ],
+        "total_value": 5,
+        "unfilled_orders": []
+      },
+      "inventory_still_works": {
+        "RESTOCK": {},
+        "SCRAP": {
+          "MA": 1,
+          "MB": 1,
+          "R": 10,
+          "W": 1
+        }
+      }
+    },
+    "recycling_min_total_four": {
+      "furnace": {
+        "ok": true,
+        "orders": [
+          {
+            "max_total": 4,
+            "min_total": 4,
+            "order_id": "pink",
+            "red_fraction": {
+              "max": [
+                1,
+                2
+              ],
+              "min": [
+                1,
+                2
+              ]
+            },
+            "value": 3
+          },
+          {
+            "max_total": 2,
+            "min_total": 2,
+            "order_id": "pure-red",
+            "red_fraction": {
+              "max": [
+                1,
+                1
+              ],
+              "min": [
+                1,
+                1
+              ]
+            },
+            "value": 2
+          },
+          {
+            "max_total": 3,
+            "min_total": 3,
+            "order_id": "trap",
+            "red_fraction": {
+              "max": [
+                2,
+                3
+              ],
+              "min": [
+                2,
+                3
+              ]
+            },
+            "value": 100
+          }
+        ],
+        "plates": [
+          {
+            "cakes": [
+              {
+                "batch_no": "cake-u-63fad605d66a93a4",
+                "kind": "UNIT",
+                "red": 0,
+                "white": 2
+              },
+              {
+                "batch_no": "cake-u-7caffa141e2f62cc",
+                "kind": "UNIT",
+                "red": 2,
+                "white": 0
+              }
+            ],
+            "items": [
+              {
+                "request_id": "rc-c-ret-r",
+                "sale_id": "SR",
+                "unit_id": "r1"
+              },
+              {
+                "request_id": "rc-c-ret-w",
+                "sale_id": "SW",
+                "unit_id": "w1"
+              }
+            ],
+            "order_id": "pink",
+            "red": 2,
+            "red_fraction": [
+              1,
+              2
+            ],
+            "total": 4,
+            "value": 3,
+            "white": 2
+          }
+        ],
+        "repeated": false,
+        "run_id": "rc-c-f1",
+        "stock_remaining": [
+          {
+            "batch_no": "cake-g-7f131df6e5debf5e",
+            "red": 1,
+            "white": 1
+          }
+        ],
+        "total_value": 3,
+        "unfilled_orders": [
+          "pure-red",
+          "trap"
+        ]
+      }
+    },
+    "recycling_restock_variant": {
+      "batch": {
+        "batch_id": "rc-b-b1",
+        "cakes": [
+          {
+            "batch_no": "cake-u-7caffa141e2f62cc",
+            "coupon_id": null,
+            "kind": "UNIT",
+            "recipe": {
+              "red": 2,
+              "white": 0
+            },
+            "red": 2,
+            "request_id": "rc-b-ret-r",
+            "sale_id": "SR",
+            "sku": "R",
+            "unit_id": "r1",
+            "white": 0
+          },
+          {
+            "batch_no": "cake-u-63fad605d66a93a4",
+            "coupon_id": null,
+            "kind": "UNIT",
+            "recipe": {
+              "red": 0,
+              "white": 2
+            },
+            "red": 0,
+            "request_id": "rc-b-ret-w",
+            "sale_id": "SW",
+            "sku": "W",
+            "unit_id": "w1",
+            "white": 2
+          }
+        ],
+        "ok": true,
+        "pending": [
+          {
+            "awaiting": [
+              "m2"
+            ],
+            "coupon_id": "PAIR",
+            "received": [
+              "m1"
+            ],
+            "sale_id": "SM"
+          }
+        ],
+        "problems": [],
+        "repeated": false,
+        "skipped": []
+      },
+      "furnace": {
+        "ok": true,
+        "orders": [
+          {
+            "max_total": 4,
+            "min_total": 2,
+            "order_id": "pink",
+            "red_fraction": {
+              "max": [
+                1,
+                2
+              ],
+              "min": [
+                1,
+                2
+              ]
+            },
+            "value": 3
+          },
+          {
+            "max_total": 2,
+            "min_total": 2,
+            "order_id": "pure-red",
+            "red_fraction": {
+              "max": [
+                1,
+                1
+              ],
+              "min": [
+                1,
+                1
+              ]
+            },
+            "value": 2
+          }
+        ],
+        "plates": [
+          {
+            "cakes": [
+              {
+                "batch_no": "cake-u-63fad605d66a93a4",
+                "kind": "UNIT",
+                "red": 0,
+                "white": 2
+              },
+              {
+                "batch_no": "cake-u-7caffa141e2f62cc",
+                "kind": "UNIT",
+                "red": 2,
+                "white": 0
+              }
+            ],
+            "items": [
+              {
+                "request_id": "rc-b-ret-r",
+                "sale_id": "SR",
+                "unit_id": "r1"
+              },
+              {
+                "request_id": "rc-b-ret-w",
+                "sale_id": "SW",
+                "unit_id": "w1"
+              }
+            ],
+            "order_id": "pink",
+            "red": 2,
+            "red_fraction": [
+              1,
+              2
+            ],
+            "total": 4,
+            "value": 3,
+            "white": 2
+          }
+        ],
+        "repeated": false,
+        "run_id": "rc-b-f1",
+        "stock_remaining": [],
+        "total_value": 3,
+        "unfilled_orders": [
+          "pure-red"
+        ]
+      }
+    },
     "sale_conflict": {
       "error": "SALE_CONFLICT",
       "rejected": true
@@ -3185,8 +4331,8 @@
     }
   },
   "summary": {
-    "checks": 19,
+    "checks": 38,
     "failed": 0,
-    "passed": 19
+    "passed": 38
   }
 }

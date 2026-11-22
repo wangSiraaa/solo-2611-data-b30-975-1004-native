@@ -159,6 +159,249 @@
       "op": "register_sale",
       "quote": "$q_added",
       "sale_id": "S1"
+    },
+    {
+      "op": "register_process_sheet",
+      "sheet": {
+        "kind": "UNIT",
+        "recipe": {
+          "red": 2,
+          "white": 0
+        },
+        "sku": "R"
+      }
+    },
+    {
+      "op": "register_process_sheet",
+      "sheet": {
+        "kind": "UNIT",
+        "recipe": {
+          "red": 0,
+          "white": 2
+        },
+        "sku": "W"
+      }
+    },
+    {
+      "op": "register_process_sheet",
+      "sheet": {
+        "coupon_id": "PAIR",
+        "kind": "GROUP",
+        "loss": {
+          "red": 1,
+          "white": 1
+        },
+        "members": {
+          "MA": {
+            "red": 1,
+            "white": 1
+          },
+          "MB": {
+            "red": 1,
+            "white": 1
+          }
+        }
+      }
+    },
+    {
+      "coupons": [],
+      "op": "publish_snapshot",
+      "products": [
+        {
+          "price": 100,
+          "sku": "R"
+        }
+      ],
+      "snapshot_id": "rc-r"
+    },
+    {
+      "coupons": [],
+      "op": "publish_snapshot",
+      "products": [
+        {
+          "price": 100,
+          "sku": "W"
+        }
+      ],
+      "snapshot_id": "rc-w"
+    },
+    {
+      "coupons": [
+        {
+          "D": 50,
+          "coupon_id": "PAIR",
+          "requires": {
+            "MA": 1,
+            "MB": 1
+          }
+        }
+      ],
+      "op": "publish_snapshot",
+      "products": [
+        {
+          "price": 100,
+          "sku": "MA"
+        },
+        {
+          "price": 100,
+          "sku": "MB"
+        }
+      ],
+      "snapshot_id": "rc-m"
+    },
+    {
+      "basket": [
+        {
+          "price": 100,
+          "sku": "R",
+          "unit_id": "r1"
+        }
+      ],
+      "coupons": [],
+      "name": "rc_qr",
+      "op": "quote",
+      "request_id": "rc-qr",
+      "snapshot_id": "rc-r"
+    },
+    {
+      "basket": [
+        {
+          "price": 100,
+          "sku": "W",
+          "unit_id": "w1"
+        }
+      ],
+      "coupons": [],
+      "name": "rc_qw",
+      "op": "quote",
+      "request_id": "rc-qw",
+      "snapshot_id": "rc-w"
+    },
+    {
+      "basket": [
+        {
+          "price": 100,
+          "sku": "MA",
+          "unit_id": "m1"
+        },
+        {
+          "price": 100,
+          "sku": "MB",
+          "unit_id": "m2"
+        }
+      ],
+      "coupons": [],
+      "name": "rc_qm",
+      "op": "quote",
+      "request_id": "rc-qm",
+      "snapshot_id": "rc-m"
+    },
+    {
+      "op": "register_sale",
+      "quote": "$rc_qr",
+      "sale_id": "SR"
+    },
+    {
+      "op": "register_sale",
+      "quote": "$rc_qw",
+      "sale_id": "SW"
+    },
+    {
+      "op": "register_sale",
+      "quote": "$rc_qm",
+      "sale_id": "SM"
+    },
+    {
+      "grade": {
+        "r1": "SCRAP"
+      },
+      "op": "return",
+      "request_id": "rc-ret-r",
+      "sale_id": "SR",
+      "unit_ids": [
+        "r1"
+      ]
+    },
+    {
+      "grade": {
+        "w1": "SCRAP"
+      },
+      "op": "return",
+      "request_id": "rc-ret-w",
+      "sale_id": "SW",
+      "unit_ids": [
+        "w1"
+      ]
+    },
+    {
+      "grade": {
+        "m1": "SCRAP",
+        "m2": "SCRAP"
+      },
+      "op": "return",
+      "request_id": "rc-ret-m",
+      "sale_id": "SM",
+      "unit_ids": [
+        "m1",
+        "m2"
+      ]
+    },
+    {
+      "bucket": "SCRAP",
+      "event_id": "rc-manual-scrap",
+      "op": "adjust_inventory",
+      "quantity": 9,
+      "sku": "R"
+    },
+    {
+      "batch_id": "rc-b1",
+      "name": "rc_batch",
+      "op": "run_recycling"
+    },
+    {
+      "name": "rc_plan",
+      "op": "run_furnace",
+      "orders": [
+        {
+          "max_total": 4,
+          "min_total": 2,
+          "order_id": "pink",
+          "red_fraction": {
+            "max": [
+              1,
+              2
+            ],
+            "min": [
+              1,
+              2
+            ]
+          },
+          "value": 3
+        },
+        {
+          "max_total": 2,
+          "min_total": 2,
+          "order_id": "pure-red",
+          "red_fraction": {
+            "max": [
+              1,
+              1
+            ],
+            "min": [
+              1,
+              1
+            ]
+          },
+          "value": 2
+        }
+      ],
+      "run_id": "rc-f1"
+    },
+    {
+      "op": "audit_recycling"
+    },
+    {
+      "op": "inventory"
     }
   ]
 }

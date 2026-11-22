@@ -28,9 +28,230 @@ from .validation import validate_basket, validate_coupons
 ROOT = Path(__file__).resolve().parent.parent
 
 
+def run_recycling_demo(results: Dict[str, Any], recycling_db: str) -> None:
+    """Returned chips -> cakes -> plates: the worked examples from the brief.
+
+    A manual scrap *count* never mints a cake (only named SCRAP-returned units
+    do), the furnace never scoops from a pooled aggregate, and every run is
+    replayable.  Expectations are stated as plain literals in the checks.
+    """
+
+    scenarios = results["scenarios"]
+    checks = results["checks"]
+
+    def check(name: str, ok: bool, expected: Any, actual: Any) -> None:
+        checks.append({"check": name, "ok": bool(ok), "expected": expected, "actual": actual})
+
+    # ------------------------------------------------------------------
+    # A. Main example: M -> pink, R -> pure red scores 5; manual scrap
+    #    count and old inventory queries live side by side.
+    # ------------------------------------------------------------------
+    svc = _demo_workshop()
+    svc.return_units("rc-a-ret-r", "SR", ["r1"], {"r1": "SCRAP"})
+    svc.return_units("rc-a-ret-w", "SW", ["w1"], {"w1": "SCRAP"})
+    svc.return_units("rc-a-ret-m", "SM", ["m1", "m2"], {"m1": "SCRAP", "m2": "SCRAP"})
+    svc.adjust_inventory("rc-a-manual-scrap", "R", 9, "SCRAP")  # a bare count, not named chips
+    batch = svc.run_recycling("rc-a-b1")
+    plan = svc.run_furnace("rc-a-f1", [PINK_ORDER, RED_ORDER])
+    retry = svc.run_furnace("rc-a-f1", [PINK_ORDER, RED_ORDER])
+    audit = svc.audit_recycling()
+    inventory = svc.inventory()
+    scenarios["recycling_main"] = {
+        "batch": batch,
+        "furnace": plan,
+        "inventory_still_works": inventory,
+        "audit": audit,
+    }
+    check(
+        "recycling.main.cakes_are_r_w_m",
+        sorted((c["red"], c["white"]) for c in batch["cakes"]) == [(0, 2), (1, 1), (2, 0)],
+        "R(2,0), W(0,2), M(1,1)",
+        [(c["red"], c["white"]) for c in batch["cakes"]],
+    )
+    check("recycling.main.manual_scrap_mints_nothing", len(batch["cakes"]) == 3, 3, len(batch["cakes"]))
+    check("recycling.main.value_is_5", plan["total_value"] == 5, 5, plan["total_value"])
+    pink_plate = next(p for p in plan["plates"] if p["order_id"] == "pink")
+    red_plate = next(p for p in plan["plates"] if p["order_id"] == "pure-red")
+    check(
+        "recycling.main.pink_burns_group_cake_m",
+        (pink_plate["red"], pink_plate["white"]) == (1, 1)
+        and [(i["sale_id"], i["unit_id"]) for i in pink_plate["items"]] == [("SM", "m1"), ("SM", "m2")],
+        "M(1,1) from SM.m1+SM.m2",
+        pink_plate["items"],
+    )
+    check(
+        "recycling.main.red_burns_r_and_w_stays",
+        (red_plate["red"], red_plate["white"]) == (2, 0)
+        and [(i["sale_id"], i["unit_id"]) for i in red_plate["items"]] == [("SR", "r1")]
+        and len(plan["stock_remaining"]) == 1,
+        "R(2,0) from SR.r1; W left in stock",
+        {"red_plate": red_plate["items"], "stock_remaining": plan["stock_remaining"]},
+    )
+    check("recycling.main.requisition_retry_replays", retry == plan, "identical", "identical" if retry == plan else retry)
+    check("recycling.main.audit_ok", audit["ok"], True, audit["ok"])
+    check(
+        "recycling.main.old_inventory_queries_unchanged",
+        inventory["SCRAP"] == {"MA": 1, "MB": 1, "R": 10, "W": 1},
+        "SCRAP bucket counts every scrapped unit incl. the manual 9",
+        inventory["SCRAP"],
+    )
+
+    # ------------------------------------------------------------------
+    # B. One chip of the pair came back RESTOCK: the group never de-films,
+    #    only R and W remain, and the best plate is R+W -> pink scoring 3.
+    # ------------------------------------------------------------------
+    svc_b = _demo_workshop()
+    svc_b.return_units("rc-b-ret-r", "SR", ["r1"], {"r1": "SCRAP"})
+    svc_b.return_units("rc-b-ret-w", "SW", ["w1"], {"w1": "SCRAP"})
+    svc_b.return_units("rc-b-ret-m1", "SM", ["m1"], {"m1": "SCRAP"})
+    svc_b.return_units("rc-b-ret-m2", "SM", ["m2"], {"m2": "RESTOCK"})
+    batch_b = svc_b.run_recycling("rc-b-b1")
+    plan_b = svc_b.run_furnace("rc-b-f1", [PINK_ORDER, RED_ORDER])
+    scenarios["recycling_restock_variant"] = {"batch": batch_b, "furnace": plan_b}
+    check(
+        "recycling.restock.group_stays_pending",
+        batch_b["pending"] == [{"sale_id": "SM", "coupon_id": "PAIR", "received": ["m1"], "awaiting": ["m2"]}]
+        and sorted((c["red"], c["white"]) for c in batch_b["cakes"]) == [(0, 2), (2, 0)],
+        "only R and W cakes; pair tagged pending",
+        batch_b["pending"],
+    )
+    check("recycling.restock.value_is_3", plan_b["total_value"] == 3, 3, plan_b["total_value"])
+    check(
+        "recycling.restock.plate_is_r_plus_w",
+        [(i["sale_id"], i["unit_id"]) for p in plan_b["plates"] for i in p["items"]]
+        == [("SR", "r1"), ("SW", "w1")],
+        "R+W -> pink",
+        plan_b["plates"],
+    )
+
+    # ------------------------------------------------------------------
+    # C. Same three cakes, but pink now demands exactly 4 portions: best is
+    #    R+W -> pink scoring 3; M is left over; the aggregate pool (3 red +
+    #    3 white) cannot be scooped into a 2/3-red 3-portion order either.
+    # ------------------------------------------------------------------
+    svc_c = _demo_workshop()
+    svc_c.return_units("rc-c-ret-r", "SR", ["r1"], {"r1": "SCRAP"})
+    svc_c.return_units("rc-c-ret-w", "SW", ["w1"], {"w1": "SCRAP"})
+    svc_c.return_units("rc-c-ret-m", "SM", ["m1", "m2"], {"m1": "SCRAP", "m2": "SCRAP"})
+    svc_c.run_recycling("rc-c-b1")
+    pink4 = {"order_id": "pink", "red_fraction": {"min": [1, 2], "max": [1, 2]}, "min_total": 4, "max_total": 4, "value": 3}
+    trap = {"order_id": "trap", "red_fraction": {"min": [2, 3], "max": [2, 3]}, "min_total": 3, "max_total": 3, "value": 100}
+    plan_c = svc_c.run_furnace("rc-c-f1", [pink4, RED_ORDER, trap])
+    scenarios["recycling_min_total_four"] = {"furnace": plan_c}
+    check("recycling.min4.value_is_3", plan_c["total_value"] == 3, 3, plan_c["total_value"])
+    pink_c = next(p for p in plan_c["plates"] if p["order_id"] == "pink")
+    check(
+        "recycling.min4.plate_is_r_plus_w_m_leftover",
+        (pink_c["red"], pink_c["white"], pink_c["total"]) == (2, 2, 4)
+        and len(plan_c["stock_remaining"]) == 1
+        and (plan_c["stock_remaining"][0]["red"], plan_c["stock_remaining"][0]["white"]) == (1, 1),
+        "R+W -> pink(4); M(1,1) stays",
+        plan_c["stock_remaining"],
+    )
+    check(
+        "recycling.min4.aggregate_cannot_be_scooped",
+        "trap" in plan_c["unfilled_orders"],
+        "2/3 red of 3 portions exists in the pool but in no whole-cake set",
+        plan_c["unfilled_orders"],
+    )
+
+    # ------------------------------------------------------------------
+    # D. Cross-day returns and the requisition retry, on a real file
+    #    database that is reopened between days.
+    # ------------------------------------------------------------------
+    for suffix in ("", "-wal", "-shm"):
+        stale = Path(recycling_db + suffix)
+        if stale.exists():
+            stale.unlink()
+    day1 = _demo_workshop(recycling_db)
+    day1.return_units("rc-d-ret-m1", "SM", ["m1"], {"m1": "SCRAP"})
+    batch_d1 = day1.run_recycling("rc-d-b1")
+    del day1  # day 1 ends; the service is reopened from the same file
+    day2 = open_service(recycling_db)
+    day2.return_units("rc-d-ret-m2", "SM", ["m2"], {"m2": "SCRAP"})
+    batch_d2 = day2.run_recycling("rc-d-b2")
+    replay_d1 = day2.run_recycling("rc-d-b1")
+    furnace_d = day2.run_furnace(
+        "rc-d-f1",
+        [{"order_id": "half", "red_fraction": {"min": [1, 2], "max": [1, 2]}, "min_total": 2, "max_total": 2, "value": 5}],
+    )
+    furnace_retry = day2.run_furnace(
+        "rc-d-f1",
+        [{"order_id": "half", "red_fraction": {"min": [1, 2], "max": [1, 2]}, "min_total": 2, "max_total": 2, "value": 5}],
+    )
+    audit_d = day2.audit_recycling()
+    scenarios["recycling_cross_day"] = {
+        "database": recycling_db,
+        "day1_batch": batch_d1,
+        "day2_batch": batch_d2,
+        "furnace": furnace_d,
+        "audit": audit_d,
+    }
+    check(
+        "recycling.cross_day.tagged_until_complete",
+        batch_d1["cakes"] == []
+        and batch_d1["pending"] == [{"sale_id": "SM", "coupon_id": "PAIR", "received": ["m1"], "awaiting": ["m2"]}],
+        "day 1: pending, no cake",
+        batch_d1["pending"],
+    )
+    check(
+        "recycling.cross_day.completes_next_day",
+        len(batch_d2["cakes"]) == 1 and (batch_d2["cakes"][0]["red"], batch_d2["cakes"][0]["white"]) == (1, 1),
+        "day 2: one group cake M(1,1)",
+        batch_d2["cakes"],
+    )
+    check("recycling.cross_day.old_batch_replay_is_stable", replay_d1 == batch_d1, "identical", "identical" if replay_d1 == batch_d1 else replay_d1)
+    check(
+        "recycling.cross_day.requisition_retry_replays",
+        furnace_retry == furnace_d and furnace_d["total_value"] == 5,
+        "identical plan, value 5",
+        {"retry_same": furnace_retry == furnace_d, "value": furnace_d["total_value"]},
+    )
+    check("recycling.cross_day.audit_ok", audit_d["ok"], True, audit_d["ok"])
+
+
 def _write_json(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+PINK_ORDER = {"order_id": "pink", "red_fraction": {"min": [1, 2], "max": [1, 2]}, "min_total": 2, "max_total": 4, "value": 3}
+RED_ORDER = {"order_id": "pure-red", "red_fraction": {"min": [1, 1], "max": [1, 1]}, "min_total": 2, "max_total": 2, "value": 2}
+
+
+def _demo_workshop(path=":memory:"):
+    """A workshop with sealed sheets and three real sales: R, W and the filmed pair M."""
+
+    svc = open_service(path)
+    svc.register_process_sheet({"kind": "UNIT", "sku": "R", "recipe": {"red": 2, "white": 0}})
+    svc.register_process_sheet({"kind": "UNIT", "sku": "W", "recipe": {"red": 0, "white": 2}})
+    svc.register_process_sheet(
+        {
+            "kind": "GROUP",
+            "coupon_id": "PAIR",
+            "members": {"MA": {"red": 1, "white": 1}, "MB": {"red": 1, "white": 1}},
+            "loss": {"red": 1, "white": 1},
+        }
+    )
+    snap_r = svc.publish_snapshot([{"sku": "R", "price": 100}], [], snapshot_id="rc-r")
+    snap_w = svc.publish_snapshot([{"sku": "W", "price": 100}], [], snapshot_id="rc-w")
+    snap_m = svc.publish_snapshot(
+        [{"sku": "MA", "price": 100}, {"sku": "MB", "price": 100}],
+        [{"coupon_id": "PAIR", "D": 50, "requires": {"MA": 1, "MB": 1}}],
+        snapshot_id="rc-m",
+    )
+    svc.register_sale("SR", quote=svc.quote([{"unit_id": "r1", "sku": "R", "price": 100}], [], "rc-qr", snap_r))
+    svc.register_sale("SW", quote=svc.quote([{"unit_id": "w1", "sku": "W", "price": 100}], [], "rc-qw", snap_w))
+    svc.register_sale(
+        "SM",
+        quote=svc.quote(
+            [{"unit_id": "m1", "sku": "MA", "price": 100}, {"unit_id": "m2", "sku": "MB", "price": 100}],
+            [],
+            "rc-qm",
+            snap_m,
+        ),
+    )
+    return svc
 
 
 def _brute(basket, coupons):
@@ -509,6 +730,11 @@ def run_demo(db_path: str, out_path: str, plan_path: str) -> Dict[str, Any]:
     })
     del final
 
+    # ------------------------------------------------------------------
+    # 8. Recycling and furnace: returned chips -> cakes -> plates.
+    # ------------------------------------------------------------------
+    run_recycling_demo(results, str(ROOT / "data" / "demo_recycling.db"))
+
     results["summary"] = {
         "checks": len(results["checks"]),
         "passed": sum(1 for c in results["checks"] if c["ok"]),
@@ -526,6 +752,26 @@ def run_demo(db_path: str, out_path: str, plan_path: str) -> Dict[str, Any]:
             {"op": "return", "request_id": "r1", "sale_id": "S1", "unit_ids": ["b"], "grade": {"b": "RESTOCK"}},
             {"op": "return", "request_id": "ret-added-b", "sale_id": "S2", "unit_ids": ["b"], "grade": {"b": "SCRAP"}},
             {"op": "register_sale", "sale_id": "S1", "quote": "$q_added", "expect_error": "SALE_CONFLICT"},
+            {"op": "register_process_sheet", "sheet": {"kind": "UNIT", "sku": "R", "recipe": {"red": 2, "white": 0}}},
+            {"op": "register_process_sheet", "sheet": {"kind": "UNIT", "sku": "W", "recipe": {"red": 0, "white": 2}}},
+            {"op": "register_process_sheet", "sheet": {"kind": "GROUP", "coupon_id": "PAIR", "members": {"MA": {"red": 1, "white": 1}, "MB": {"red": 1, "white": 1}}, "loss": {"red": 1, "white": 1}}},
+            {"op": "publish_snapshot", "products": [{"sku": "R", "price": 100}], "coupons": [], "snapshot_id": "rc-r"},
+            {"op": "publish_snapshot", "products": [{"sku": "W", "price": 100}], "coupons": [], "snapshot_id": "rc-w"},
+            {"op": "publish_snapshot", "products": [{"sku": "MA", "price": 100}, {"sku": "MB", "price": 100}], "coupons": [{"coupon_id": "PAIR", "D": 50, "requires": {"MA": 1, "MB": 1}}], "snapshot_id": "rc-m"},
+            {"name": "rc_qr", "op": "quote", "basket": [{"unit_id": "r1", "sku": "R", "price": 100}], "coupons": [], "request_id": "rc-qr", "snapshot_id": "rc-r"},
+            {"name": "rc_qw", "op": "quote", "basket": [{"unit_id": "w1", "sku": "W", "price": 100}], "coupons": [], "request_id": "rc-qw", "snapshot_id": "rc-w"},
+            {"name": "rc_qm", "op": "quote", "basket": [{"unit_id": "m1", "sku": "MA", "price": 100}, {"unit_id": "m2", "sku": "MB", "price": 100}], "coupons": [], "request_id": "rc-qm", "snapshot_id": "rc-m"},
+            {"op": "register_sale", "sale_id": "SR", "quote": "$rc_qr"},
+            {"op": "register_sale", "sale_id": "SW", "quote": "$rc_qw"},
+            {"op": "register_sale", "sale_id": "SM", "quote": "$rc_qm"},
+            {"op": "return", "request_id": "rc-ret-r", "sale_id": "SR", "unit_ids": ["r1"], "grade": {"r1": "SCRAP"}},
+            {"op": "return", "request_id": "rc-ret-w", "sale_id": "SW", "unit_ids": ["w1"], "grade": {"w1": "SCRAP"}},
+            {"op": "return", "request_id": "rc-ret-m", "sale_id": "SM", "unit_ids": ["m1", "m2"], "grade": {"m1": "SCRAP", "m2": "SCRAP"}},
+            {"op": "adjust_inventory", "event_id": "rc-manual-scrap", "sku": "R", "quantity": 9, "bucket": "SCRAP"},
+            {"name": "rc_batch", "op": "run_recycling", "batch_id": "rc-b1"},
+            {"name": "rc_plan", "op": "run_furnace", "run_id": "rc-f1", "orders": [PINK_ORDER, RED_ORDER]},
+            {"op": "audit_recycling"},
+            {"op": "inventory"},
         ],
     }
 

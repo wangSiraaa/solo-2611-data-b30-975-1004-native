@@ -184,5 +184,51 @@ class Database:
                 qty INTEGER NOT NULL,
                 PRIMARY KEY (sku, bucket)
             );
+
+            CREATE TABLE IF NOT EXISTS process_sheets (
+                sheet_id TEXT PRIMARY KEY,
+                kind TEXT NOT NULL CHECK (kind IN ('UNIT', 'GROUP')),
+                key TEXT NOT NULL,
+                content_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS recycle_batches (
+                batch_id TEXT PRIMARY KEY,
+                result_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS cakes (
+                batch_no TEXT PRIMARY KEY,
+                kind TEXT NOT NULL CHECK (kind IN ('UNIT', 'GROUP')),
+                red INTEGER NOT NULL,
+                white INTEGER NOT NULL,
+                sale_id TEXT NOT NULL,
+                coupon_id TEXT,
+                batch_id TEXT NOT NULL,
+                content_json TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'IN_STOCK' CHECK (status IN ('IN_STOCK', 'REQUISITIONED')),
+                requisition_id TEXT,
+                created_at TEXT NOT NULL
+            );
+
+            -- One physical item enters at most one recycling batch: the primary
+            -- key is the database-level guard behind that contract.
+            CREATE TABLE IF NOT EXISTS cake_items (
+                sale_id TEXT NOT NULL,
+                unit_id TEXT NOT NULL,
+                batch_no TEXT NOT NULL,
+                batch_id TEXT NOT NULL,
+                request_id TEXT NOT NULL,
+                PRIMARY KEY (sale_id, unit_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS furnace_runs (
+                run_id TEXT PRIMARY KEY,
+                orders_json TEXT NOT NULL,
+                result_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
             """
         )

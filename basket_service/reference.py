@@ -130,3 +130,40 @@ def expected_return(paid_by_unit: Mapping[str, int], unit_ids: Sequence[str]) ->
 
     per_unit = {unit_id: paid_by_unit[unit_id] for unit_id in unit_ids}
     return sum(per_unit.values()), per_unit
+
+
+def furnace_reference(cakes: Sequence[Mapping[str, Any]], orders: Sequence[Mapping[str, Any]]) -> int:
+    """Brute-force furnace optimum over raw cake subsets (tests only).
+
+    Enumerates every feasible cake subset per order and searches every
+    combination of disjoint choices directly — no grouping, no DP — so it is a
+    genuinely independent check of the production solver.  Feasible for small
+    cake counts (each order scans 2^n subsets).
+    """
+
+    def fills(order: Mapping[str, Any], mask: int) -> bool:
+        red = total = 0
+        for i, cake in enumerate(cakes):
+            if mask >> i & 1:
+                red += cake["red"]
+                total += cake["red"] + cake["white"]
+        if not order["min_total"] <= total <= order["max_total"]:
+            return False
+        (lo_num, lo_den), (hi_num, hi_den) = order["red_fraction"]["min"], order["red_fraction"]["max"]
+        return lo_num * total <= red * lo_den and red * hi_den <= hi_num * total
+
+    feasible = [[mask for mask in range(1, 1 << len(cakes)) if fills(order, mask)] for order in orders]
+    best = 0
+
+    def search(position: int, used: int, value: int) -> None:
+        nonlocal best
+        if position == len(orders):
+            best = max(best, value)
+            return
+        search(position + 1, used, value)
+        for mask in feasible[position]:
+            if not mask & used:
+                search(position + 1, used | mask, value + orders[position]["value"])
+
+    search(0, 0, 0)
+    return best
