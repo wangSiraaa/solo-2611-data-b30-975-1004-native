@@ -5,14 +5,22 @@ publication cut. Python 3.11, standard library only, SQLite storage.
 
 ```
 cs/
-  catalog.py   pure DAG algorithms: cycle check, ancestors, descendants,
-               shortest witness paths, coverage explanation
-  store.py     SQLite store: revisions, atomic bundles, cut-pinned queries,
-               immutable products
-  cli.py       command line entry point (`python -m cs`)
-tests/         unit tests (python -m unittest discover -s tests)
-demo.py        runs materials/721 end to end and feeds consumer.py
-showcase.py    walks through every required scenario on the diamond
+  catalog.py       pure DAG algorithms: cycle check, ancestors, descendants,
+                   shortest witness paths, coverage explanation
+  store.py         SQLite store: revisions, atomic bundles, cut-pinned queries,
+                   immutable products
+  reservation.py   pure waiting-order rules (shift age, re-entry, tiebreak)
+  reservation_store.py  qualification cuts, waiting books, gates, hall issuance
+  legacy.py        the old hall's own database + durable request/idempotent issue
+  handover.py      cross-database handover (no shared transaction)
+  legacy_server.py local old-hall HTTP service (frozen client contract)
+  new_server.py    local new-system HTTP service (books + issuance + old lookup)
+  res_cli.py       command line for the reservation subsystem
+  cli.py           command line entry point (`python -m cs`)
+tests/             unit tests (python -m unittest discover -s tests)
+demo.py            runs materials/721 end to end and feeds consumer.py
+showcase.py        walks through every required scenario on the diamond
+scenario.py        replays the reservation/handover requirements over HTTP
 ```
 
 ## Quick start
@@ -135,3 +143,74 @@ multi-label counting, same-name distinct ids, cut-pinned re-reads, immutable
 products, revision rules, withdraw/reopen, atomic bundle rejection (including
 catalog rollback when a fact revision conflicts), and a concurrent reader
 that must observe only pre- or post-bundle state.
+
+## Reservation subsystem
+
+On top of the same catalog and atomic-cut store, the reservation business is
+built as additions, not a rewrite. The catalog/fact rules are reused verbatim;
+the reservation tables live in their own SQLite database.
+
+### Qualification books (`cs.reservation`, `cs.reservation_store`)
+
+* A **cut** is one committed catalog/fact bundle. Each cut is numbered `Q<n>`
+  and remembers the exact `(catalog_revision, fact_revision, fact_watermark)`
+  triple, so a book signed out at a cut can be re-read later against the same
+  classification.
+* A branch manages one or more classes. A ticket is a **candidate** when any
+  direct class reaches a managed class through child→parent edges (the same
+  reachability as the summary).
+* Ranking is `(entered_shift, ticket_id)`: a ticket keeps the shift it first
+  entered while it stays continuously reachable; if it leaves on one committed
+  cut and returns on a later one it queues from the new shift; a ticket that
+  only swaps path inside the same committed batch never leaves, so its age is
+  preserved. Equal shifts sort by the stable ticket id.
+* **Gates** are immutable, timestamped events applied before the next cut:
+  `insert` (missed registration / queue jump), `drop`, `restore` (re-opens a
+  dropped entry with its stored classification basis), `correct` (re-age).
+  The qualification office can record them independently, before any window
+  opens, without rewriting a committed cut.
+* **Books** freeze their cut and payload. `reopen_book` returns the frozen
+  entries, cut and per-entry basis, even after the catalog has changed.
+
+### Hall issuance
+
+* Each branch/day has a capacity. A ticket is实名 (bound to `ticket_id`) and a
+  person may hold **one ticket per day across all halls**; a database uniqueness
+  index enforces it, so two windows racing for the same person produce one
+  ticket and the loser continues from the queue head.
+* Issuance walks the signed-out order and skips anyone who already holds a
+  ticket that day. `redeem_seat` models a number already redeemed earlier in
+  the day; it blocks everyone else but cannot be transferred.
+* A class change after issue never moves or invalidates an issued ticket.
+
+### Old hall and handover (`cs.legacy`, `cs.handover`)
+
+* The old client sends only window, hall, service day and a stable request id.
+  The server derives the person, keeps its own database, and always answers the
+  same request id with the same ticket. A non-issued request reports
+  `pending`/`awaiting`/`unknown`, never a fabricated ticket. Lookups never draw
+  a seat or spend a new day's quota, so a next-day retransmit still recovers the
+  original receipt.
+* Issuance is two-phase: a durable `pending` row is committed before the seat,
+  then the seat and `issued` result commit together. A crash after the seat but
+  before the reply is recovered by the retry.
+* The two systems are **never** in one transaction. A new hall asks the old
+  service whether a person already holds today's ticket and imports the row
+  idempotently; the old hall imports a new-hall ticket so a late retry is
+  refused. A branch can be closed for its own handover while other branches
+  keep issuing.
+
+### Running the local replay
+
+```bash
+# deterministic, all requirements + restart:
+python3 scenario.py
+
+# or run the two independently restartable services:
+python3 -m cs.legacy_server --db /tmp/legacy.db --port 8101
+python3 -m cs.new_server   --db /tmp/new.db    --port 8102 \
+        --legacy-url http://127.0.0.1:8101
+```
+
+Both services survive a restart against the same database file; books, gates,
+tickets and the old request log all persist.
