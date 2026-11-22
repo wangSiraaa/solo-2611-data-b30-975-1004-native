@@ -205,6 +205,118 @@ WHEN OLD.opened_day IS NOT NULL
 BEGIN
     SELECT RAISE(ABORT, 'opened_day is immutable');
 END;
+
+-- ---------------------------------------------------------------------------
+-- Whole-bottle seals + offline co-signing (封单 / 会签)
+-- ---------------------------------------------------------------------------
+-- A seat is a named signer position. ``ordinary`` seats are single-owner and
+-- therefore guarantee at most one settlement per seal; ``deputy`` seats carry
+-- an independent paper book and two windows may each hold a copy.
+CREATE TABLE IF NOT EXISTS seats (
+    seat_id     TEXT PRIMARY KEY,
+    seat_type   TEXT NOT NULL CHECK (seat_type IN ('ordinary', 'deputy'))
+);
+
+-- A seal freezes a whole-bottle handover manifest: the transitive run/bottle
+-- closure, each run's witness seats, and the exact reservation rows. Sealing
+-- never deducts inventory. Storing the reservation ids lets a later release
+-- plus re-reservation of the same amount be detected as stale.
+CREATE TABLE IF NOT EXISTS seals (
+    seal_id                TEXT PRIMARY KEY,
+    created_day            INTEGER NOT NULL,
+    designated_runs_json   TEXT NOT NULL,
+    runs_json              TEXT NOT NULL,
+    bottles_json           TEXT NOT NULL,
+    witnesses_json         TEXT NOT NULL,
+    reservations_json      TEXT NOT NULL,
+    report_json            TEXT NOT NULL
+);
+
+-- Historical groups that may still be effective. Once ``recalled`` is set,
+-- the group stops constraining a new scheme; recall never reverses.
+CREATE TABLE IF NOT EXISTS historical_groups (
+    group_id    TEXT PRIMARY KEY,
+    seats_json  TEXT NOT NULL,
+    created_day INTEGER NOT NULL,
+    recalled    INTEGER NOT NULL DEFAULT 0 CHECK (recalled IN (0, 1))
+);
+
+-- A co-signing scheme: the candidate groups plus the computed activation.
+CREATE TABLE IF NOT EXISTS schemes (
+    scheme_id    TEXT PRIMARY KEY,
+    seal_id      TEXT NOT NULL REFERENCES seals(seal_id),
+    created_day  INTEGER NOT NULL,
+    groups_json  TEXT NOT NULL,
+    result_json  TEXT NOT NULL,
+    feasible     INTEGER NOT NULL CHECK (feasible IN (0, 1)),
+    total_fee    INTEGER
+);
+
+-- Formal settlement postings. At most one settlement per seal (unique index),
+-- and a repeated (seal, settlement_no) is deduplicated on read.
+CREATE TABLE IF NOT EXISTS postings (
+    posting_id      TEXT PRIMARY KEY,
+    seal_id         TEXT NOT NULL REFERENCES seals(seal_id),
+    scheme_id       TEXT NOT NULL REFERENCES schemes(scheme_id),
+    settlement_no   TEXT NOT NULL,
+    group_name      TEXT NOT NULL,
+    signatures_json TEXT NOT NULL,
+    posted_day      INTEGER NOT NULL,
+    UNIQUE (seal_id, settlement_no)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS postings_one_per_seal
+    ON postings(seal_id);
+
+CREATE TRIGGER IF NOT EXISTS seals_immutable
+BEFORE UPDATE ON seals
+BEGIN
+    SELECT RAISE(ABORT, 'seal is immutable');
+END;
+
+CREATE TRIGGER IF NOT EXISTS seals_no_delete
+BEFORE DELETE ON seals
+BEGIN
+    SELECT RAISE(ABORT, 'seal is immutable');
+END;
+
+CREATE TRIGGER IF NOT EXISTS schemes_immutable
+BEFORE UPDATE ON schemes
+BEGIN
+    SELECT RAISE(ABORT, 'scheme is immutable');
+END;
+
+CREATE TRIGGER IF NOT EXISTS schemes_no_delete
+BEFORE DELETE ON schemes
+BEGIN
+    SELECT RAISE(ABORT, 'scheme is immutable');
+END;
+
+CREATE TRIGGER IF NOT EXISTS postings_immutable
+BEFORE UPDATE ON postings
+BEGIN
+    SELECT RAISE(ABORT, 'posting is immutable');
+END;
+
+CREATE TRIGGER IF NOT EXISTS postings_no_delete
+BEFORE DELETE ON postings
+BEGIN
+    SELECT RAISE(ABORT, 'posting is immutable');
+END;
+
+-- Recall is monotonic and the seat set of a historical group is frozen.
+CREATE TRIGGER IF NOT EXISTS historical_groups_seats_immutable
+BEFORE UPDATE OF seats_json, created_day ON historical_groups
+BEGIN
+    SELECT RAISE(ABORT, 'historical group seats are immutable');
+END;
+
+CREATE TRIGGER IF NOT EXISTS historical_groups_recall_monotonic
+BEFORE UPDATE OF recalled ON historical_groups
+WHEN OLD.recalled = 1 AND NEW.recalled <> 1
+BEGIN
+    SELECT RAISE(ABORT, 'historical group recall cannot be undone');
+END;
 """
 
 

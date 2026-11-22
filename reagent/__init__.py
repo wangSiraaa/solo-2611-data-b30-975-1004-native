@@ -12,10 +12,12 @@ from .errors import (
 from .inventory import InventoryService, fetch_method_requirements
 from .runs import RunService
 from .schema import connect, initialize, transaction
+from .seals import SealService
 
 __all__ = [
     "InventoryService",
     "RunService",
+    "SealService",
     "bottles",
     "connect",
     "initialize",

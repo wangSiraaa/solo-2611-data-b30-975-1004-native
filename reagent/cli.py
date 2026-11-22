@@ -12,6 +12,7 @@ from .errors import ReagentError
 from .inventory import InventoryService
 from .runs import RunService
 from .schema import connect, initialize
+from .seals import SealService
 
 
 def _load_json(path: str) -> dict:
@@ -147,6 +148,105 @@ def cmd_run_ops(args: argparse.Namespace) -> dict:
     results = execute_operations(conn, _load_json(args.operations))
     conn.close()
     return {"results": results}
+
+
+# -- seal / co-signing handlers --------------------------------------------
+def cmd_seats(args: argparse.Namespace) -> dict:
+    conn = connect(args.db)
+    seats = []
+    for item in args.seat:
+        seat_id, _, seat_type = item.partition("=")
+        if not seat_id or not seat_type:
+            raise ValueError(f"seat must be SEAT=TYPE, got {item!r}")
+        seats.append({"seat_id": seat_id, "seat_type": seat_type})
+    result = SealService(conn).register_seats(seats, args.day)
+    conn.close()
+    return result
+
+
+def cmd_seal(args: argparse.Namespace) -> dict:
+    conn = connect(args.db)
+    result = SealService(conn).create_seal(
+        args.seal_id, args.run, _load_witnesses(args.witness), args.day
+    )
+    conn.close()
+    return result
+
+
+def cmd_get_seal(args: argparse.Namespace) -> dict:
+    conn = connect(args.db)
+    result = SealService(conn).get_seal(args.seal_id)
+    conn.close()
+    return result
+
+
+def cmd_seal_status(args: argparse.Namespace) -> dict:
+    conn = connect(args.db)
+    result = SealService(conn).seal_staleness(args.seal_id)
+    conn.close()
+    return result
+
+
+def cmd_scheme(args: argparse.Namespace) -> dict:
+    conn = connect(args.db)
+    payload = _load_json(args.spec)
+    result = SealService(conn).create_scheme(
+        args.scheme_id,
+        args.seal_id,
+        payload["groups"],
+        payload["shifts"],
+        payload.get("seats", []),
+        args.day,
+    )
+    conn.close()
+    return result
+
+
+def cmd_get_scheme(args: argparse.Namespace) -> dict:
+    conn = connect(args.db)
+    result = SealService(conn).get_scheme(args.scheme_id)
+    conn.close()
+    return result
+
+
+def cmd_verify_voucher(args: argparse.Namespace) -> dict:
+    conn = connect(args.db)
+    result = SealService(conn).verify_voucher(
+        args.seal_id, args.scheme_id, args.shift, args.settlement_no, args.signature
+    )
+    conn.close()
+    return result
+
+
+def cmd_post(args: argparse.Namespace) -> dict:
+    conn = connect(args.db)
+    result = SealService(conn).post_settlement(
+        args.seal_id,
+        args.scheme_id,
+        args.shift,
+        args.settlement_no,
+        args.signature,
+        args.day,
+    )
+    conn.close()
+    return result
+
+
+def cmd_historical(args: argparse.Namespace) -> dict:
+    conn = connect(args.db)
+    service = SealService(conn)
+    if args.recall:
+        result = service.recall_historical_group(args.group_id, args.day)
+    else:
+        result = service.register_historical_group(
+            args.group_id, args.seat, args.day
+        )
+    conn.close()
+    return result
+
+
+def _load_witnesses(path: str) -> dict:
+    return _load_json(path)
 
 
 # ---------------------------------------------------------------------------
@@ -381,6 +481,69 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--inventory", required=True)
     p.add_argument("--operations", required=True)
     p.set_defaults(handler=cmd_run_ops)
+
+    p = sub.add_parser("seats", help="register named ordinary/deputy seats")
+    p.add_argument("--seat", action="append", required=True,
+                   help="SEAT=TYPE (TYPE is ordinary or deputy); repeat per seat")
+    p.add_argument("--day", type=int, default=None)
+    p.set_defaults(handler=cmd_seats)
+
+    p = sub.add_parser("seal", help="freeze a whole-bottle handover manifest")
+    p.add_argument("--seal-id", required=True)
+    p.add_argument("--run", action="append", required=True,
+                   help="designated run_id; repeat per run")
+    p.add_argument("--witness", required=True,
+                   help="JSON file mapping run_id -> [witness seat ids]")
+    p.add_argument("--day", required=True, type=int)
+    p.set_defaults(handler=cmd_seal)
+
+    p = sub.add_parser("get-seal", help="show a frozen seal manifest")
+    p.add_argument("--seal-id", required=True)
+    p.set_defaults(handler=cmd_get_seal)
+
+    p = sub.add_parser("seal-status", help="check whether a seal is still current")
+    p.add_argument("--seal-id", required=True)
+    p.set_defaults(handler=cmd_seal_status)
+
+    p = sub.add_parser("scheme", help="activate a minimum-fee co-signing scheme")
+    p.add_argument("--scheme-id", required=True)
+    p.add_argument("--seal-id", required=True)
+    p.add_argument("--spec", required=True,
+                   help="JSON file with groups, shifts and optional seats")
+    p.add_argument("--day", required=True, type=int)
+    p.set_defaults(handler=cmd_scheme)
+
+    p = sub.add_parser("get-scheme", help="show a co-signing scheme plan")
+    p.add_argument("--scheme-id", required=True)
+    p.set_defaults(handler=cmd_get_scheme)
+
+    p = sub.add_parser("verify-voucher", help="accept/reject a pickup voucher")
+    p.add_argument("--seal-id", required=True)
+    p.add_argument("--scheme-id", required=True)
+    p.add_argument("--shift", required=True)
+    p.add_argument("--settlement-no", required=True)
+    p.add_argument("--signature", action="append", required=True,
+                   help="signed seat id; repeat per signature")
+    p.set_defaults(handler=cmd_verify_voucher)
+
+    p = sub.add_parser("post", help="formally book one settlement of a seal")
+    p.add_argument("--seal-id", required=True)
+    p.add_argument("--scheme-id", required=True)
+    p.add_argument("--shift", required=True)
+    p.add_argument("--settlement-no", required=True)
+    p.add_argument("--signature", action="append", required=True,
+                   help="signed seat id; repeat per signature")
+    p.add_argument("--day", required=True, type=int)
+    p.set_defaults(handler=cmd_post)
+
+    p = sub.add_parser("historical", help="register/recall a historical group")
+    p.add_argument("--group-id", required=True)
+    p.add_argument("--seat", action="append", default=[],
+                   help="seat id in the historical group; repeat per seat")
+    p.add_argument("--recall", action="store_true",
+                   help="confirm the old group is withdrawn")
+    p.add_argument("--day", required=True, type=int)
+    p.set_defaults(handler=cmd_historical)
 
     return parser
 

@@ -6,8 +6,9 @@ Python 3.11 + SQLite 的试剂库存服务与运行库。只使用 `materials/71
 ## 运行
 
 ```bash
-python3 -m unittest discover -s tests -v     # 46 个测试
+python3 -m unittest discover -s tests -v     # 85 个测试
 python3 demo_719.py                          # 跑 719 操作文件并打印可手算守恒
+python3 demo_co_sign.py                      # 封单 + 断网会签走查
 ```
 
 CLI 独立入口（`--db` 指向 SQLite 文件）：
@@ -111,3 +112,81 @@ python3 -m reagent --db store.db run-ops --inventory materials/719/inventory.jso
 至 100 瓶 / 200 运行已在 `ScaleTests` 覆盖。不做分布式事务、进程强杀、
 真实仪器通信或结果判读。终态收束依赖单库事务 + 保存回执：开始失败时在同一
 事务内释放全部预留并写终态原因，之后的重放只读该回执。
+
+## 整瓶封单与断网会签（`reagent/cosign.py` + `reagent/seals.py`）
+
+在运行/预留之上再加一层：把若干**已预留**运行整瓶交接冻结成**封单**，由若干
+**会签小组**在断网窗口办理唯一一次交割。输入只含虚构岗位与账，不连外部系统。
+
+### 封单：传递闭包 + 逐项来由
+
+`SealService.create_seal` 从指定运行出发，沿“同瓶”关系取**传递闭包**：
+
+- 闭包里的运行 = 指定运行 + 与闭包内任一运行共享任一瓶、且在该瓶上有 `active`
+  预留的运行；
+- 闭包里的瓶 = 这些运行的 `active` 预留所在瓶。
+
+对每个瓶逐项报告来由与异常：`report.bottles[bid].reason`（由哪个运行引入）、
+`runs`（该瓶上各闭包运行占的份数）、`ordinary_holders`（普通 holder 占住）、
+`unallocated`（未占余额）、`invalid_bottles`（已失效，含生效到期日）、
+`outside_runs`。`report.runs[rid].reason` 给出运行被纳入闭包的理由（指定，或
+“shares bottle X with run r1”）。
+
+**封单不扣库存**：只读现有预留并落一份快照（含每行 `reservation_id`）。因此
+“撤回原预留再同量占回”会产生新的预留行，`seal_staleness` 据此判定为失效，
+必须重新封单，不能沿用旧封单交割。
+
+### 会签办法：最低总开通费 + 值班 + 互认
+
+`cosign.plan_scheme` 在“若干具名小组（全员到场 + 开通费）/ 若干班次（在岗席）”
+上求**最低总开通费**的启用集合：
+
+- **准用**：每个准用小组必须覆盖闭包中**每个运行**至少一位受托见证席；
+  `ineligible_groups` 逐组列出它漏掉了哪些运行。
+- **值班**：每个班次的在岗人必须**整组包含**至少一个已启用小组；
+  某班若无任何可启用小组能全员到齐，则整体不可行并指明该班。
+- **互认**：任两个已启用小组（含自身）必须至少共享一名**普通席**。普通席单一
+  持有，天然保证同一封单的不同交割号最多签一个；代班席自带独立纸簿、两窗口
+  可能各持副本，所以仅由代班席相交不足以防重号。
+- **历史班**：每个已启用小组还须与每个**仍生效**的旧小组满足同样的普通席相交，
+  直到该旧小组收回获确认（`recall` 单调不可逆）。
+
+结果为 `activated_groups`、`total_fee`、`per_shift`（每班可用的全员组）以及
+`ineligible_groups` / `blocked_groups` / `conflicts` / `unsatisfiable_shifts`。
+
+### 验收与正式入账
+
+- `verify_voucher(seal, scheme, shift, settlement_no, signatures)`：按**实际具名
+  签字**验收——要求某启用小组既在该班全员到岗、又其全员都在签字中出现，返回
+  `accepted` 与 `qualifying_groups`，否则给出拒绝理由。
+- `post_settlement(...)`：正式入账。按 `(封单, 交割号)` 去重：同一号重放返回原
+  回执（`replayed=True`）；同一封单换号则 `Conflict`（每封单至多一次交割）。
+  封单过期，或任一闭包运行已离开 `reserved`（已开始/已释放），一律拒绝交付。
+
+CLI（`--db` 指向 SQLite 文件）：
+
+```bash
+python3 -m reagent --db store.db seats --seat A=ordinary --seat D=deputy --day 1
+python3 -m reagent --db store.db seal --seal-id S1 --run r1 --witness wit.json --day 1
+python3 -m reagent --db store.db get-seal --seal-id S1
+python3 -m reagent --db store.db seal-status --seal-id S1
+python3 -m reagent --db store.db scheme --scheme-id SCH1 --seal-id S1 --spec spec.json --day 1
+python3 -m reagent --db store.db verify-voucher --seal-id S1 --scheme-id SCH1 \
+        --shift s2 --settlement-no T1 --signature A --signature C
+python3 -m reagent --db store.db post --seal-id S1 --scheme-id SCH1 \
+        --shift s2 --settlement-no T1 --signature A --signature C --day 1
+python3 -m reagent --db store.db historical --group-id oldA --seat A --day 2
+python3 -m reagent --db store.db historical --group-id oldA --recall --day 3
+```
+
+`--witness` 是 `run_id -> [见证席]` 的 JSON；`--spec` 是含 `groups`、`shifts`
+（可选 `seats`）的 JSON。完整走查见 `python3 demo_co_sign.py`。
+
+### 题给例子（`tests/test_seals.py` 均有对应断言）
+
+- 普通席 A、B、C；组 AB/AC/BC 各费 1；三班分别恰好是这三组，甲由 A、B 见证：
+  须全开三组，费用 3。
+- 乙与甲同瓶、仅 C 见证：AB 因漏乙不可用；两班为 AC、BC，费用 2。
+- 旧组仅 A 签字仍有效时，BC 因与 {A} 无普通席相交被禁用、无法办；收回确认后
+  又可办。
+- 交集只含代班席 D 的 G1={A,D}、G2={B,D}：两窗口可各出票，整体不可行。
