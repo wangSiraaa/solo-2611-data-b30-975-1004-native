@@ -48,6 +48,18 @@ from .model import (
 )
 from .solver import MasterResult, GroupOutcome, solve, single_group_max
 from .verify import VerifyResult, verify_plan, verify_plan_document
+from .honor import (
+    CharterDraft,
+    HonorResult,
+    HonorSelection,
+    HonorVerifyResult,
+    apply_choices,
+    evaluate_honor,
+    graduation_plan,
+    review_bundle,
+    verify_honor_result,
+)
+from .scholarship import StudentEntry, assess_scholarship, canonical_finalization
 
 __all__ = [
     "Store",
@@ -58,6 +70,18 @@ __all__ = [
     "verify_plan",
     "verify_plan_document",
     "VerifyResult",
+    "CharterDraft",
+    "HonorResult",
+    "HonorSelection",
+    "HonorVerifyResult",
+    "apply_choices",
+    "evaluate_honor",
+    "graduation_plan",
+    "review_bundle",
+    "verify_honor_result",
+    "StudentEntry",
+    "assess_scholarship",
+    "canonical_finalization",
     "Catalog",
     "Records",
     "Requirements",

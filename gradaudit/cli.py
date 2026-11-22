@@ -24,6 +24,8 @@ from .library import Store
 from .model import parse_catalog, parse_records, parse_requirements, parse_plan
 from .solver import solve
 from .verify import verify_plan, verify_plan_document
+from .honor import CharterDraft, review_bundle
+from .scholarship import StudentEntry, assess_scholarship
 
 
 def _load(path: str) -> Any:
@@ -73,6 +75,44 @@ def cmd_candidates(args) -> int:
         "external_course": args.external_course,
         "candidates": catalog.candidates_with_categories(args.external_course),
     })
+    return 0
+
+
+# --------------------------------------------------------------------------- #
+# honor / scholarship (stateless, read-only)
+# --------------------------------------------------------------------------- #
+def cmd_honor(args) -> int:
+    catalog = parse_catalog(_load(args.catalog))
+    records = parse_records(_load(args.records))
+    requirements = parse_requirements(_load(args.requirements))
+    choices = _load(args.choices) if args.choices else None
+    if choices is not None:
+        if not isinstance(choices, dict):
+            raise GradAuditError("charter choices must be a JSON object of code -> course")
+        choices = {k: v for k, v in choices.items()}
+    bundle = review_bundle(catalog, records, requirements, args.honor_category, choices=choices)
+    _dump(bundle)
+    return 0 if (bundle["graduation"]["verified"] and bundle["honor"]["verified"]) else 1
+
+
+def cmd_scholarship(args) -> int:
+    catalog = parse_catalog(_load(args.catalog))
+    batch = _load(args.batch)  # {"entries":[...], "covered_codes":[...], "honor_categories":[...],
+                               #  "quota":int, "tie_order":[...]}
+    entries = batch["entries"]
+    resolved = []
+    for entry in entries:
+        records = parse_records(entry["records"])
+        requirements = parse_requirements(entry["requirements"])
+        resolved.append(StudentEntry(
+            student_id=records.student_id, records=records, requirements=requirements
+        ))
+    draft = CharterDraft.from_catalog(catalog, batch.get("covered_codes", []))
+    report = assess_scholarship(
+        catalog, resolved, batch["honor_categories"], draft,
+        quota=batch["quota"], tie_order=batch.get("tie_order", []),
+    )
+    _dump(report)
     return 0
 
 
@@ -193,6 +233,21 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("external_course")
     sp.add_argument("--catalog", required=True)
     sp.set_defaults(func=cmd_candidates)
+
+    # honor (stateless): one student's max honor points + re-checkable bundle
+    sp = sub.add_parser("honor", help="max honor points and review bundle for one student")
+    add_inputs(sp)
+    sp.add_argument("--honor-category", action="append", required=True,
+                    help="category that counts toward honors (repeatable)")
+    sp.add_argument("--choices", help="optional JSON file: external code -> chosen local course")
+    sp.set_defaults(func=cmd_honor)
+
+    # scholarship (stateless batch): per-student always/some/never + witnesses
+    sp = sub.add_parser("scholarship", help="per-student scholarship outcome across all legal finalizations")
+    sp.add_argument("--catalog", required=True)
+    sp.add_argument("--batch", required=True,
+                    help="JSON with entries[], covered_codes[], honor_categories[], quota, tie_order[]")
+    sp.set_defaults(func=cmd_scholarship)
 
     # imports
     sp = sub.add_parser("import-catalog", help="import a catalog revision into the library")

@@ -843,3 +843,94 @@ class Store:
             (request_id, self.subject_key),
         ).fetchall()
         return [dict(r) for r in rows]
+
+    # =====================================================================
+    # honor / scholarship assessment (read-only; never writes audit state)
+    # =====================================================================
+    def assess_scholarship(
+        self,
+        *,
+        entries: List[dict],
+        covered_codes: List[str],
+        honor_categories: List[str],
+        quota: int,
+        tie_order: List[str],
+        catalog_revision: Optional[int] = None,
+    ) -> dict:
+        """Assess a cohort's scholarship outcome under a draft charter.
+
+        ``entries`` is a list of ``{"student_id", "records_revision",
+        "requirements_revision"}``.  Revisions and student identity are pinned
+        together in the returned report.  This method only reads; it never
+        prepares, confirms or reopens anything, so existing graduation
+        confirmations are untouched by trial assessments.
+        """
+        from .honor import CharterDraft
+        from .scholarship import StudentEntry, assess_scholarship
+
+        cat_rev = catalog_revision if catalog_revision is not None else self._latest_catalog_revision()
+        if cat_rev is None:
+            raise RevisionNotFoundError("no catalog revision is imported", location="catalog_revision")
+        catalog = self.get_catalog(cat_rev)
+        if catalog is None:
+            raise RevisionNotFoundError(f"catalog revision {cat_rev} is not imported", location="catalog_revision")
+
+        resolved: List[StudentEntry] = []
+        pinned: List[dict] = []
+        for entry in entries:
+            sid = entry.get("student_id")
+            rrev = entry.get("records_revision")
+            qrev = entry.get("requirements_revision")
+            if not isinstance(sid, str) or not sid:
+                raise SchemaError("entry student_id must be a non-empty string", location="student_id")
+            records = self.get_records(rrev)
+            if records is None:
+                raise RevisionNotFoundError(f"records revision {rrev} is not imported", location="records_revision")
+            if records.student_id != sid:
+                raise SchemaError(
+                    f"records revision {rrev} belongs to {records.student_id!r}, not {sid!r}",
+                    location=sid,
+                )
+            requirements = self.get_requirements(qrev)
+            if requirements is None:
+                raise RevisionNotFoundError(
+                    f"requirements revision {qrev} is not imported", location="requirements_revision"
+                )
+            resolved.append(StudentEntry(student_id=sid, records=records, requirements=requirements))
+            pinned.append({
+                "student_id": sid,
+                "catalog_revision": records and cat_rev,
+                "records_revision": records.revision,
+                "records_hash": records.content_hash(),
+                "requirements_revision": requirements.revision,
+                "requirements_hash": requirements.content_hash(),
+            })
+
+        draft = CharterDraft.from_catalog(catalog, covered_codes)
+        report = assess_scholarship(
+            catalog, resolved, honor_categories, draft,
+            quota=quota, tie_order=tie_order,
+        )
+        report["catalog_revision"] = cat_rev
+        report["pinned_revisions"] = pinned
+        report["read_only"] = True
+        return report
+
+    def issue_award_list(self, report: dict) -> dict:
+        """The award list is issued under the single canonical finalization.
+
+        Refuses a report that was not produced by :meth:`assess_scholarship`
+        (:data:`report['read_only']`), so a hand-edited ranking cannot be
+        issued as if it were a coherent snapshot.
+        """
+        if not report.get("read_only"):
+            raise SchemaError("award list can only be issued from an assessment report", location="report")
+        return {
+            "format": "scholarship-award-list/1",
+            "catalog_revision": report.get("catalog_revision"),
+            "quota": report["quota"],
+            "tie_order": report["tie_order"],
+            "finalization": report["canonical_finalization"],
+            "awards": report["canonical_award_list"],
+            "pinned_revisions": report.get("pinned_revisions", []),
+        }

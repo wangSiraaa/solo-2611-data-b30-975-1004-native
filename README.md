@@ -7,6 +7,8 @@
 | 课程等价目录 + 审核库 | `gradaudit.Store` / `python -m gradaudit ...` | SQLite 持久化目录、转入记录、要求、准备/确认/重开 |
 | 精确求解器 | `gradaudit.solver.solve` / `gradaudit solve` | 判定整体可行，可行时给出具体分配；不可行时给出各组独立最大点数 |
 | 独立验证器 | `gradaudit.verify.verify_plan[_document]` / `gradaudit verify` | **不调用求解器**，按输入逐条重核一个 `course-allocation/1` 方案 |
+| 荣誉评优 | `gradaudit.honor` / `gradaudit honor` | 先完整分配毕业学分，再从未用记录中取整条可映射荣誉类别的记录，最大化荣誉点；输出可复核包 |
+| 奖学金判定 | `gradaudit.scholarship` / `gradaudit scholarship` | 章程未定稿时逐人回答 always / some / never，并对 some 给出整届一致的定稿见证名单 |
 
 四个公开 JSON 文档的字段含义即题面合同。目录**只**通过显式 `equivalences` 映射给出候选，绝不按课程名猜测。
 
@@ -168,8 +170,72 @@ python3 -m gradaudit list-candidates 1 X    # 独立列出候选及类别，不�
 
 ---
 
-## 7. 测试覆盖
+## 7. 荣誉评优（graduation 先行，荣誉取剩余）
 
-`tests/test_gradaudit.py`（31 项）覆盖：候选显式不猜测、点数校验、组数上限；两份合法方案均接受、复用被拒且定位 R1、未知记录/非候选/类别不符/修订不符、点数只从记录读取、未用记录、额外字段；两组争一份、单组够整体不够、多候选与未分配、精确不可行的共享记录；修订冲突、旧修订可查、映射改变可行性；准备-确认-重开、拒收准备不可确认、仅导入新修订也会使确认 stale、外部方案同边界；以及 **200 个随机小实例与暴力枚举的可行性一致性交叉校验**（并校验每个可行解都能被验证器接受）。
+给定一名学生、一份**在册**（enrolled）毕业要求与一份章程草案，`gradaudit.honor` 先完整分配其毕业学分，再只在**未分给毕业**的记录里挑选整条可映射到荣誉类别的记录，使荣誉点之和最大：
+
+* 记录不可拆、不可兼用：同一条记录不能既计入毕业又计入荣誉（`record_shared` 会被验证器拒绝）。
+* 若根本不能毕业，结果为 `eligible=false`、`honor_points=null`（无资格），验证器用精确求解器确认确实不可行。
+* 为最大化荣誉点**允许不同于求解器默认产物的合法毕业分配**；只要求毕业可行。
+
+```python
+from gradaudit.honor import evaluate_honor, review_bundle, apply_choices, CharterDraft
+
+res = evaluate_honor(catalog, records, requirements, ["HONOR"])           # 章程未覆盖，候选自由
+res = evaluate_honor(cat, recs, req, ["HONOR"], fixed_choices={"E": "E_HON"})  # 固定某码选择
+bundle = review_bundle(catalog, records, requirements, ["HONOR"], choices={"E": "E_HON"})
+```
+
+章程与候选约束：
+
+* `CharterDraft.from_catalog(catalog, covered_codes)` 只为目录里确有其候选的外部码建章程；**章程不能引入目录没有的候选**。
+* `apply_choices(catalog, choices)` 把被覆盖码的候选集收成唯一一个；每码的选择必须是该码的目录候选，否则 `SchemaError`。未被覆盖的码照旧目录。
+* 同一外部码在**整批学生、全部出现位置**都用同一选择。
+* `review_bundle` 输出 `format=honor-review/1`：固定 `student_id` 与三个修订及内容哈希，附 `fingerprint`，毕业分配再用**普通独立验证器**复核、荣誉选择用 `verify_honor_result` 复核，校内可直接重跑。
+
+```bash
+python3 -m gradaudit honor --catalog cat.json --records recs.json \
+  --requirements req.json --honor-category HONOR --choices choices.json
+```
+
+---
+
+## 8. 奖学金判定（章程未定稿时的逐人答复）
+
+`gradaudit.scholarship.assess_scholarship` 在章程的全部**合法定稿**（每个被覆盖码取目录候选之一）上枚举，逐人回答：
+
+| 结论 | 含义 |
+| --- | --- |
+| `always` | 在**每一种**合法定稿下都能获奖 |
+| `some` | 仅在**某些**定稿下获奖（结论会变） |
+| `never` | 任何定稿下都不可能获奖 |
+
+对 `some` 学生给出两份**整届一致**的见证定稿：`available_under`（此时获奖）与 `not_available_under`（此时不获奖），每份都附**在该单一整届定稿下重算**的完整获奖名单。**绝不**把某生在甲定稿的分数与另一生在乙定稿的分数拼成排名。
+
+* 名额与同分次序由奖学金办公室给定；同分次序即 `tie_order`（未显式列出者按 `student_id` 排到末尾）。
+* 领取名单永远按**同一份**确定性定稿签发：`canonical_finalization`（被覆盖码按码排序各取第一候选）。`Store.issue_award_list(report)` 只接受由 `assess_scholarship` 产出的报告（带 `read_only` 标记），手工改过的排名不能冒充名单签发。
+* 逐生核分与试算**只读**：`Store.assess_scholarship` 从不 prepare / confirm / reopen，原有毕业确认不受试算影响（`confirmation_id` 不变）。每份报告固定每个学生的 `records_revision/hash`、`requirements_revision/hash` 与 `catalog_revision`，把修订与学生身份一起固定。
+
+```bash
+# batch.json: {"entries":[{records,requirements}...],"covered_codes":[...],
+#              "honor_categories":[...],"quota":N,"tie_order":[...]}
+python3 -m gradaudit scholarship --catalog cat.json --batch batch.json
+```
+
+### 题面场景（三人、两名额、同分次序 C、B、A）
+
+三人各有独占 G 类 3 点可毕业；A 另有专属荣誉 3 点与 E 2 点，B 另有专属荣誉 2 点与 E 2 点，C 另有专属荣誉 4 点；E 可解释为荣誉或普通选修。
+
+* **E 任选**：A 荣誉 3+2、C 荣誉 4、B 荣誉 2+2 或 2；两席里 A 恒在 → A、C 为 `always`，B 为 `never`。
+* **把 B 的 E 记录更正为独立码 F**（E、F 各可两选）：当 E 判普通、F 判荣誉时 B 得 4 点压过 A 的 3 点，A 落到第三 → A 变为 `some`；见证名单：`available_under={E:E_HON,F:F_HON}` 奖励 A、C；`not_available_under={E:E_ORD,F:F_HON}` 奖励 C、B。
+* **恢复原记录、仅把名额收为一**：A 与 C 争唯一席位，A 依同分次序在 C 之后 → A 变为 `some`，B 仍 `never`。
+
+可复现演示：`python3 examples/scholarship_demo.py` 逐场打印上述三种情形的 always/some/never 与整届一致的见证获奖名单。
+
+---
+
+## 9. 测试覆盖
+
+`tests/test_gradaudit.py`（51 项）在原 31 项基础上新增：荣誉须先完整毕业、不可毕业即无资格、荣誉 DP 与暴力枚举最优性交叉校验、章程选择必须是目录候选且不能引入新候选、章程改写改变荣誉结果、验证器拒绝超额/兼用/虚假无资格；奖学金 always/some/never、见证名单整届一致且不混定稿、never 无见证、未知同分次序被拒；`Store` 试算只读不改原确认、名单按规范定稿签发、拒绝手改报告、学生与修订归属校验。
 
 规模合同：至 12 份记录、每份至多 3 候选、点数 1..6，均在 `solver.py` 中显式校验。不做排课、GPA 或先修。
