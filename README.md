@@ -9,8 +9,11 @@ cs/
                shortest witness paths, coverage explanation
   store.py     SQLite store: revisions, atomic bundles, cut-pinned queries,
                immutable products
+  split.py     exact rational per-ticket flow to receiving cabinets
+  settle.py    whole-cent settlement: floor/ceil cells, minimum rounding fee
   cli.py       command line entry point (`python -m cs`)
 tests/         unit tests (python -m unittest discover -s tests)
+examples/      settlement walkthroughs (diamond worked example, 200-ticket scale)
 demo.py        runs materials/721 end to end and feeds consumer.py
 showcase.py    walks through every required scenario on the diamond
 ```
@@ -123,6 +126,109 @@ cut; two different cuts never share the same triple.
   remain available for historical replay.
 * A bundle that would not change any state (no edge delta and no fact advance)
   is recorded as a no-op and creates no new revision.
+
+## Joint-account split and whole-cent settlement
+
+The classic `classification-summary/1` reports are untouched: they keep
+counting a ticket once per covered target.  On top of the same catalog/fact
+store, a separate **split ledger** states each ticket's precise share of its
+amount per receiving cabinet, and a separate **settlement** turns those
+fractions into whole-cent payments.
+
+### Receiving cabinets
+
+A cabinet is a catalog node registered as a receiving sink.  It is set at
+`init` (`"cabinets": ["A", "B"]`) and can be changed only through a bundle
+(`add_cabinets` / `remove_cabinets`), so the cabinet set is part of the same
+revisioned cut as the edges.  `python -m cs show` prints the current set.
+
+### Exact flow (`split-ledger/1`, `python -m cs split`)
+
+Business rule, exactly as specified:
+
+1. A ticket amount is divided **equally among its deduplicated direct
+   classes**.
+2. From a class, each share is divided **equally among its direct parents**.
+3. A walk **stops immediately** at a registered cabinet.
+4. Multiple walks reaching one cabinet are **merged**; a walk that ends on a
+   node with no parent and no cabinet registration goes to the **public
+   cabinet** (`@public`, overridable).
+
+All arithmetic is `fractions.Fraction`; nothing is rounded.  Each cabinet
+share carries the concrete witness paths that produced it, so a clerk can
+re-check the flow independently:
+
+```bash
+python3 -m cs --db demo.db split T1          # one ticket, its source revision
+python3 -m cs --db demo.db split             # the whole ledger + built-in check
+python3 -m cs --db demo.db split --out ledger.json
+```
+
+`split.verify_ledger` re-walks every path against the cut's
+edges and cabinet set, checking each edge, the starting direct class, that no
+cabinet is passed through, and the credited end node.
+
+**One cut only.** `build_split_ledger` / `split_ticket` read facts and catalog
+inside one deferred read transaction, so a ledger can only describe one cut
+(`G<n>` + `F<n>` + watermark).  A bundle that updates edges and amounts (an
+"old bundle") commits both atomically; the ledger built after it uses the
+post-bundle edge set *and* the post-bundle fact revision from that single cut.
+A rejected bundle changes nothing, so the ledger is byte-identical before and
+after it.
+
+### Whole-cent settlement (`settlement/1`, `python -m cs settle`)
+
+Input: the exact shares, ticket amounts, teller integer targets per cabinet,
+already-paid cells, and a fee for each cell that would round up.
+
+* Every `(ticket, cabinet)` payment is the **floor or ceiling** of its exact
+  share; a cell already paid is **fixed** to that integer and never moved.
+* Row sums must equal ticket amounts; column sums must equal the teller
+  targets, one by one.
+* Among all feasible whole-cent accounts the **total upward-rounding fee is
+  minimal**; ties are arbitrary.
+* If no account exists, nothing is paid and nothing is moved: the report is
+  `status: "infeasible"` with every cell `paid: null` and concrete reasons.
+
+The fee is per `(ticket, cabinet)` cell.  This makes the choice a minimum-cost
+exact-degree selection, solved as a min-cost flow (successive shortest
+augmenting paths with Johnson potentials); the resolution is exact integers.
+The worked example (`examples/settlement_walkthrough.py`) has two free cells
+and two cells at 3 each, reproducing the required minimum fees 0, 3 and 6.
+
+### Worked diamond example
+
+`python3 examples/settlement_walkthrough.py` builds a temporary old database
+from a real catalog and facts, then prints the four required scenes:
+
+| scene | shape | locked | minimum fee |
+|-------|-------|--------|-------------|
+| 1 | X,Y directly in L, L's parents A,B are cabinets | none | **0** (diagonal up) |
+| 2 | X moved to be directly in B, X already paid 1 to B | X→B=1 | **3** (Y→A up) |
+| 3 | original shares restored, X→B locked at 1 | X→B=1 | **6** (both up) |
+| 4 | withdraw + re-open X, re-settle | — | balances reproduce; the original cut still re-reads to the original flows |
+| 5 | column targets sum correctly but cabinet C has no fractional cell | — | **infeasible**, nothing paid |
+
+### Scale and the "correct column total yet impossible" case
+
+`python3 examples/scale_walkthrough.py` seeds a real SQLite database with 200
+tickets and 21 cabinets (`examples/data/`): cross-cutting leaves, multi-level
+paths and 336 whole-cent cells already paid.  It verifies every flow path,
+settles the account (`status: settled`, minimum fee reported), re-checks rows,
+columns, locked cells and the fee, and re-opens one ticket to confirm balances
+reproduce.  Scene 3 keeps the **column targets summing exactly to the ticket
+total** yet shifts a cent onto a cabinet that only has integer cells; the
+report is `infeasible` ("needs 1 more ceiling choices but only 0 free
+fractional cells exist"), no cell is paid, and the independent verifier
+confirms the verdict.  Artifacts go to `demo/out/settlement/`.
+
+### Independent re-check
+
+`python -m cs verify-settlement report.json --re-solve` and
+`settle.verify_settlement(...)` recompute floors/ceilings, every row, every
+column, preserved locked cells and the total fee from the raw inputs, and with
+`--re-solve` confirm the fee is minimal.  They never trust the report's own
+totals.
 
 ## Tests
 

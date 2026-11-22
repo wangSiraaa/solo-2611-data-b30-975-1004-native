@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS catalog_commits (
     created_seq      INTEGER NOT NULL,
     nodes            TEXT NOT NULL,
     edges            TEXT NOT NULL,
+    cabinets         TEXT NOT NULL DEFAULT '[]',
     explanation      TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS tickets (
@@ -156,6 +157,7 @@ class CatalogState:
     revision: str
     nodes: dict[str, str] = field(default_factory=dict)
     edges: frozenset[tuple[str, str]] = frozenset()
+    cabinets: frozenset[str] = frozenset()
 
     @property
     def edge_list(self) -> list[tuple[str, str]]:
@@ -170,6 +172,7 @@ class CatalogState:
                 for node_id, name in sorted(self.nodes.items())
             ],
             "edges": [list(edge) for edge in self.edge_list],
+            "cabinets": sorted(self.cabinets),
         }
 
 
@@ -258,6 +261,8 @@ def ingest_operation(operation: dict[str, Any]) -> tuple[str, dict[str, Any]]:
         payload: dict[str, Any] = {
             "add_edges": [list(e) for e in operation.get("add_edges", [])],
             "remove_edges": [list(e) for e in operation.get("remove_edges", [])],
+            "add_cabinets": list(operation.get("add_cabinets", [])),
+            "remove_cabinets": list(operation.get("remove_cabinets", [])),
             "fact_revisions": [
                 _canonical_fact(
                     fr["ticket_id"],
@@ -280,6 +285,8 @@ def ingest_operation(operation: dict[str, Any]) -> tuple[str, dict[str, Any]]:
             ],
             "add_edges": [list(e) for e in operation.get("add_edges", [])],
             "remove_edges": [list(e) for e in operation.get("remove_edges", [])],
+            "add_cabinets": list(operation.get("add_cabinets", [])),
+            "remove_cabinets": list(operation.get("remove_cabinets", [])),
         }
         if "metadata" in operation:
             payload["metadata"] = operation["metadata"]
@@ -328,7 +335,20 @@ class Store:
         self.conn = connection
         self.conn.row_factory = sqlite3.Row
         self.conn.executescript(SCHEMA)
+        self._migrate()
         self._write_lock = threading.RLock()
+
+    def _migrate(self) -> None:
+        """Add columns introduced after the first schema to older databases."""
+
+        columns = {
+            row["name"]
+            for row in self.conn.execute("PRAGMA table_info(catalog_commits)")
+        }
+        if "cabinets" not in columns:
+            self.conn.execute(
+                "ALTER TABLE catalog_commits ADD COLUMN cabinets TEXT NOT NULL DEFAULT '[]'"
+            )
 
     # ------------------------------------------------------------------ setup
     @classmethod
@@ -429,6 +449,18 @@ class Store:
         ).fetchall()
         return frozenset((r["child_id"], r["parent_id"]) for r in rows)
 
+    def _load_catalog_cabinets(self) -> frozenset[str]:
+        revision = self.catalog_revision()
+        if revision is None:
+            return frozenset()
+        row = self.conn.execute(
+            "SELECT cabinets FROM catalog_commits WHERE catalog_revision=?",
+            (revision,),
+        ).fetchone()
+        if row is None:
+            return frozenset()
+        return frozenset(json.loads(row["cabinets"] or "[]"))
+
     def load_catalog_state(self, revision: str | None = None) -> CatalogState:
         revision = revision or self.catalog_revision()
         if revision is None:
@@ -443,7 +475,11 @@ class Store:
             for n in json.loads(row["nodes"])
         }
         edges = frozenset(tuple(e) for e in json.loads(row["edges"]))
-        return CatalogState(revision=revision, nodes=nodes, edges=edges)
+        cabinets_raw = row["cabinets"] if "cabinets" in row.keys() else "[]"
+        cabinets = frozenset(json.loads(cabinets_raw or "[]"))
+        return CatalogState(
+            revision=revision, nodes=nodes, edges=edges, cabinets=cabinets
+        )
 
     def _write_catalog_snapshot(
         self,
@@ -454,12 +490,13 @@ class Store:
         seq: int,
         nodes: dict[str, str],
         edges: frozenset[tuple[str, str]],
+        cabinets: Iterable[str],
         explanation: dict[str, Any],
     ) -> None:
         self.conn.execute(
             "INSERT INTO catalog_commits"
-            "(catalog_revision, parent_revision, request_id, created_seq, nodes, edges, explanation)"
-            " VALUES(?,?,?,?,?,?,?)",
+            "(catalog_revision, parent_revision, request_id, created_seq, nodes, edges, cabinets, explanation)"
+            " VALUES(?,?,?,?,?,?,?,?)",
             (
                 revision,
                 parent,
@@ -469,6 +506,7 @@ class Store:
                     [{"id": nid, "name": name} for nid, name in sorted(nodes.items())]
                 ),
                 _json_dump([list(e) for e in sorted(edges)]),
+                _json_dump(sorted(set(cabinets))),
                 _json_dump(explanation),
             ),
         )
@@ -521,6 +559,10 @@ class Store:
         if cycle is not None:
             raise CatalogError("catalog contains a cycle: " + " -> ".join(cycle))
 
+        cabinets = self._normalise_cabinets(
+            data.get("cabinets", data.get("receiving_cabinets", [])), nodes
+        )
+
         revision = data.get("revision") or "G1"
         with self._write_lock, _Transaction(self.conn):
             seq = self._next_seq()
@@ -530,6 +572,7 @@ class Store:
                 "catalog_revision": revision,
                 "node_count": len(nodes),
                 "edge_count": len(edges),
+                "cabinets": sorted(cabinets),
             }
             self._write_catalog_snapshot(
                 revision=revision,
@@ -538,6 +581,7 @@ class Store:
                 seq=seq,
                 nodes=nodes,
                 edges=frozenset(edges),
+                cabinets=cabinets,
                 explanation=explanation,
             )
             self._record_event(seq, request_id, "init", explanation)
@@ -545,7 +589,24 @@ class Store:
                 self._set_meta("fact_revision", "F0")
                 self._set_meta("fact_watermark", "0")
                 self._set_meta("fact_counter", "0")
-        return CatalogState(revision=revision, nodes=nodes, edges=frozenset(edges))
+        return CatalogState(
+            revision=revision, nodes=nodes, edges=frozenset(edges), cabinets=cabinets
+        )
+
+    @staticmethod
+    def _normalise_cabinets(
+        raw: Sequence[str], nodes: Mapping[str, str]
+    ) -> frozenset[str]:
+        if isinstance(raw, (str, bytes)) or not isinstance(raw, (list, tuple, set, frozenset)):
+            raise CatalogError("cabinets must be a list of node ids")
+        out: set[str] = set()
+        for nid in raw:
+            if not isinstance(nid, str) or not nid:
+                raise CatalogError("cabinet id must be a non-empty string")
+            if nid not in nodes:
+                raise CatalogError(f"cabinet {nid!r} is not a catalog node")
+            out.add(nid)
+        return frozenset(out)
 
     def _project_catalog(
         self,
@@ -553,12 +614,21 @@ class Store:
         add_nodes: Sequence[dict[str, str]],
         remove_edges: Sequence[Sequence[str]],
         add_edges: Sequence[Sequence[str]],
+        add_cabinets: Sequence[str] = (),
+        remove_cabinets: Sequence[str] = (),
         base_nodes: dict[str, str] | None = None,
         base_edges: frozenset[tuple[str, str]] | None = None,
+        base_cabinets: Iterable[str] | None = None,
         allow_dangling_drop: bool = False,
-    ) -> tuple[dict[str, str], frozenset[tuple[str, str]], list[str]]:
+    ) -> tuple[
+        dict[str, str], frozenset[tuple[str, str]], frozenset[str], list[str]
+    ]:
         nodes = dict(base_nodes if base_nodes is not None else self._load_catalog_nodes())
         edges = set(base_edges if base_edges is not None else self._load_catalog_edges())
+        if base_cabinets is not None:
+            cabinets = set(base_cabinets)
+        else:
+            cabinets = set(self._load_catalog_cabinets())
         warnings: list[str] = []
 
         for node in add_nodes:
@@ -603,7 +673,22 @@ class Store:
         cycle = catalog.find_cycle(nodes, edges)
         if cycle is not None:
             raise CatalogError("catalog would contain a cycle: " + " -> ".join(cycle))
-        return nodes, frozenset(edges), warnings
+
+        for nid in remove_cabinets:
+            cabinets.discard(str(nid))
+        for nid in add_cabinets:
+            nid = str(nid)
+            if nid not in nodes:
+                raise CatalogError(f"cabinet {nid!r} is not a catalog node")
+            cabinets.add(nid)
+        known = set(nodes)
+        stale = cabinets - known
+        if stale:
+            cabinets.difference_update(stale)
+            warnings.append(
+                "dropped cabinets for retired nodes: " + ", ".join(sorted(stale))
+            )
+        return nodes, frozenset(edges), frozenset(cabinets), warnings
 
     # --------------------------------------------------------------- facts
     def _current_ticket_rows(self) -> dict[str, sqlite3.Row]:
@@ -857,6 +942,8 @@ class Store:
                     "remove": details.get(
                         "removed_edges", details.get("remove_edges", [])
                     ),
+                    "add_cabinets": details.get("added_cabinets", []),
+                    "remove_cabinets": details.get("removed_cabinets", []),
                 },
                 facts=facts,
                 warnings=details.get("warnings", []),
@@ -1024,6 +1111,8 @@ class Store:
                 add_nodes=payload.get("nodes", []),
                 add_edges=payload.get("add_edges", []),
                 remove_edges=payload.get("remove_edges", []),
+                add_cabinets=payload.get("add_cabinets", []),
+                remove_cabinets=payload.get("remove_cabinets", []),
                 request_id=request_id,
                 seq=seq,
                 parent=self.catalog_revision(),
@@ -1035,7 +1124,12 @@ class Store:
             cut=cut,
             catalog_revision=delta["catalog_revision"],
             parent_catalog_revision=delta["parent_catalog_revision"],
-            edge_delta={"add": delta["added_edges"], "remove": delta["removed_edges"]},
+            edge_delta={
+                "add": delta["added_edges"],
+                "remove": delta["removed_edges"],
+                "add_cabinets": delta["added_cabinets"],
+                "remove_cabinets": delta["removed_cabinets"],
+            },
             warnings=delta["warnings"],
             noop=delta["noop"],
         )
@@ -1046,6 +1140,8 @@ class Store:
         add_nodes: Sequence[dict[str, str]],
         add_edges: Sequence[Sequence[str]],
         remove_edges: Sequence[Sequence[str]],
+        add_cabinets: Sequence[str] = (),
+        remove_cabinets: Sequence[str] = (),
         request_id: str | None,
         seq: int,
         parent: str | None,
@@ -1059,19 +1155,27 @@ class Store:
 
         base_nodes = self._load_catalog_nodes()
         base_edges = self._load_catalog_edges()
-        nodes, edges, warnings = self._project_catalog(
+        base_cabinets = self._load_catalog_cabinets()
+        nodes, edges, cabinets, warnings = self._project_catalog(
             add_nodes=add_nodes,
             add_edges=add_edges,
             remove_edges=remove_edges,
+            add_cabinets=add_cabinets,
+            remove_cabinets=remove_cabinets,
             base_nodes=base_nodes,
             base_edges=base_edges,
+            base_cabinets=base_cabinets,
             allow_dangling_drop=bool(base_nodes),
         )
         added = sorted(edges - base_edges)
         removed = sorted(base_edges - edges)
         added_nodes = sorted(set(nodes) - set(base_nodes))
-        changed = bool(added or removed or added_nodes)
-        requested = bool(add_nodes or add_edges or remove_edges)
+        added_cabs = sorted(cabinets - base_cabinets)
+        removed_cabs = sorted(base_cabinets - cabinets)
+        changed = bool(added or removed or added_nodes or added_cabs or removed_cabs)
+        requested = bool(
+            add_nodes or add_edges or remove_edges or add_cabinets or remove_cabinets
+        )
 
         if not changed:
             warnings = warnings + (
@@ -1088,6 +1192,8 @@ class Store:
                     "fact_watermark": self.fact_watermark(),
                     "added_edges": [],
                     "removed_edges": [],
+                    "added_cabinets": [],
+                    "removed_cabinets": [],
                     "warnings": warnings,
                     "noop": True,
                 },
@@ -1097,6 +1203,8 @@ class Store:
                 "parent_catalog_revision": parent,
                 "added_edges": [],
                 "removed_edges": [],
+                "added_cabinets": [],
+                "removed_cabinets": [],
                 "warnings": warnings,
                 "noop": True,
             }
@@ -1111,6 +1219,9 @@ class Store:
             "added_nodes": [{"id": nid, "name": nodes[nid]} for nid in added_nodes],
             "add_edges": [list(e) for e in added],
             "remove_edges": [list(e) for e in removed],
+            "add_cabinets": added_cabs,
+            "remove_cabinets": removed_cabs,
+            "cabinets": sorted(cabinets),
             "warnings": warnings,
             "payload_hash": payload_hash,
         }
@@ -1121,6 +1232,7 @@ class Store:
             seq=seq,
             nodes=nodes,
             edges=edges,
+            cabinets=cabinets,
             explanation=explanation,
         )
         self._record_event(seq, request_id, "catalog", explanation)
@@ -1129,6 +1241,8 @@ class Store:
             "parent_catalog_revision": parent,
             "added_edges": [list(e) for e in added],
             "removed_edges": [list(e) for e in removed],
+            "added_cabinets": added_cabs,
+            "removed_cabinets": removed_cabs,
             "warnings": warnings,
             "noop": False,
         }
@@ -1187,18 +1301,29 @@ class Store:
 
         add_edges = payload.get("add_edges", [])
         remove_edges = payload.get("remove_edges", [])
+        add_cabinets = payload.get("add_cabinets", [])
+        remove_cabinets = payload.get("remove_cabinets", [])
         raw_facts = payload.get("fact_revisions", [])
 
         with self._write_lock, _Transaction(self.conn):
             seq = self._next_seq()
             base_nodes = self._load_catalog_nodes()
             base_edges = self._load_catalog_edges()
-            projected_nodes, projected_edges, warnings = self._project_catalog(
+            base_cabinets = self._load_catalog_cabinets()
+            (
+                projected_nodes,
+                projected_edges,
+                projected_cabinets,
+                warnings,
+            ) = self._project_catalog(
                 add_nodes=[],
                 add_edges=add_edges,
                 remove_edges=remove_edges,
+                add_cabinets=add_cabinets,
+                remove_cabinets=remove_cabinets,
                 base_nodes=base_nodes,
                 base_edges=base_edges,
+                base_cabinets=base_cabinets,
                 allow_dangling_drop=bool(base_nodes),
             )
             facts = self._normalise_facts(raw_facts)
@@ -1215,7 +1340,9 @@ class Store:
 
             added = sorted(projected_edges - base_edges)
             removed = sorted(base_edges - projected_edges)
-            catalog_changed = bool(added or removed)
+            added_cabs = sorted(projected_cabinets - base_cabinets)
+            removed_cabs = sorted(base_cabinets - projected_cabinets)
+            catalog_changed = bool(added or removed or added_cabs or removed_cabs)
             facts_to_apply = [f for f in facts if not self._fact_is_noop(f, current_rows)]
             fact_changed = bool(facts_to_apply)
 
@@ -1229,6 +1356,8 @@ class Store:
                     "catalog_changed": False,
                     "added_edges": [],
                     "removed_edges": [],
+                    "added_cabinets": [],
+                    "removed_cabinets": [],
                     "facts": [],
                     "warnings": ["bundle is a no-op; no new revisions were created"],
                     "noop": True,
@@ -1256,6 +1385,9 @@ class Store:
                     "parent_revision": parent_catalog,
                     "add_edges": [list(e) for e in added],
                     "remove_edges": [list(e) for e in removed],
+                    "add_cabinets": added_cabs,
+                    "remove_cabinets": removed_cabs,
+                    "cabinets": sorted(projected_cabinets),
                     "warnings": warnings,
                     "payload_hash": payload_hash,
                 }
@@ -1266,6 +1398,7 @@ class Store:
                     seq=seq,
                     nodes=projected_nodes,
                     edges=projected_edges,
+                    cabinets=projected_cabinets,
                     explanation=explanation,
                 )
                 self._record_event(seq, request_id, "catalog", explanation)
@@ -1290,6 +1423,8 @@ class Store:
                 "catalog_changed": catalog_changed,
                 "added_edges": [list(e) for e in added],
                 "removed_edges": [list(e) for e in removed],
+                "added_cabinets": added_cabs,
+                "removed_cabinets": removed_cabs,
                 "facts": [f.as_dict() for f in applied],
                 "warnings": warnings,
                 "noop": False,
@@ -1301,7 +1436,12 @@ class Store:
             cut=cut,
             catalog_revision=catalog_revision,
             parent_catalog_revision=parent_catalog,
-            edge_delta={"add": [list(e) for e in added], "remove": [list(e) for e in removed]},
+            edge_delta={
+                "add": [list(e) for e in added],
+                "remove": [list(e) for e in removed],
+                "add_cabinets": added_cabs,
+                "remove_cabinets": removed_cabs,
+            },
             facts=applied,
             warnings=warnings,
         )
@@ -1424,38 +1564,7 @@ class Store:
             seen.add(target)
 
         with self._write_lock, _ReadTransaction(self.conn):
-            facts: list[Fact]
-            if snapshot is not None:
-                state = self.load_catalog_state(snapshot.catalog_revision)
-                if snapshot.fact_watermark == 0:
-                    # Initial state: no fact commit has been made yet.
-                    if snapshot.fact_revision not in ("F0",):
-                        raise ConflictError(
-                            "snapshot fact revision does not match its watermark"
-                        )
-                    facts = []
-                else:
-                    resolved = self._watermark_seq(snapshot.fact_watermark)
-                    if resolved is None:
-                        raise ConflictError(
-                            f"unknown fact watermark {snapshot.fact_watermark}"
-                        )
-                    seq, revision = resolved
-                    if revision != snapshot.fact_revision:
-                        raise ConflictError(
-                            "snapshot fact revision does not match its watermark"
-                        )
-                    facts = self._load_facts_at_seq(seq)
-                cut = snapshot
-            else:
-                catalog_rev = self.catalog_revision() or "G0"
-                state = self.load_catalog_state(catalog_rev)
-                facts = self._load_active_facts_current()
-                cut = Cut(
-                    catalog_revision=catalog_rev,
-                    fact_revision=self.fact_revision(),
-                    fact_watermark=self.fact_watermark(),
-                )
+            facts, state, cut = self._snapshot_state(snapshot)
             for target in target_list:
                 if target not in state.nodes:
                     raise CatalogError(f"unknown target {target!r}")
@@ -1543,6 +1652,108 @@ class Store:
         if node_id not in state.nodes:
             raise CatalogError(f"unknown node {node_id!r}")
         return sorted(catalog.descendants(node_id, state.edges))
+
+    # --------------------------------------------------------------- split
+    def build_split_ledger(
+        self,
+        *,
+        snapshot: Cut | None = None,
+        public_cabinet: str = "public-cabinet",
+    ) -> dict[str, Any]:
+        """Exact rational per-ticket flow to receiving cabinets at one cut.
+
+        The ledger and the catalog/fact state it is derived from are read in
+        one deferred read transaction, so a ledger can only ever describe one
+        cut.  ``split-ledger/1`` is a separate product; the classic
+        ``classification-summary/1`` reports are untouched.
+        """
+
+        from . import split as split_module
+
+        with self._write_lock, _ReadTransaction(self.conn):
+            facts, state, cut = self._snapshot_state(snapshot)
+            ledger = split_module.build_ledger(
+                facts,
+                state.edges,
+                state.cabinets,
+                cut.as_dict(),
+                public=public_cabinet,
+            )
+            ledger["catalog_revision"] = cut.catalog_revision
+            return ledger
+
+    def split_ticket(
+        self,
+        ticket_id: str,
+        *,
+        snapshot: Cut | None = None,
+        public_cabinet: str = "public-cabinet",
+    ) -> dict[str, Any]:
+        """Exact share of a *single* ticket, keeping its fact revision."""
+
+        from . import split as split_module
+
+        with self._write_lock, _ReadTransaction(self.conn):
+            facts, state, cut = self._snapshot_state(snapshot)
+            match = next((f for f in facts if f.ticket_id == ticket_id), None)
+            if match is None:
+                raise FactError(f"ticket {ticket_id!r} is not active at this cut")
+            parents = catalog.build_parents(state.edges)
+            split = split_module.compute_ticket_split(
+                match.ticket_id,
+                match.revision,
+                match.amount,
+                match.classes,
+                parents,
+                state.cabinets,
+                public_cabinet,
+            )
+            serialized = split_module.serialize_ticket(split)
+            serialized["cut"] = cut.as_dict()
+            serialized["catalog_revision"] = cut.catalog_revision
+            serialized["public_cabinet"] = public_cabinet
+            return serialized
+
+    def _snapshot_state(
+        self, snapshot: Cut | None
+    ) -> tuple[list[Fact], CatalogState, Cut]:
+        """Load facts and catalog together, pinned to one cut.
+
+        Must be called inside an enclosing (read) transaction; the caller's
+        transaction is the snapshot boundary.
+        """
+
+        if snapshot is not None:
+            state = self.load_catalog_state(snapshot.catalog_revision)
+            if snapshot.fact_watermark == 0:
+                if snapshot.fact_revision not in ("F0",):
+                    raise ConflictError(
+                        "snapshot fact revision does not match its watermark"
+                    )
+                facts: list[Fact] = []
+            else:
+                resolved = self._watermark_seq(snapshot.fact_watermark)
+                if resolved is None:
+                    raise ConflictError(
+                        f"unknown fact watermark {snapshot.fact_watermark}"
+                    )
+                seq, revision = resolved
+                if revision != snapshot.fact_revision:
+                    raise ConflictError(
+                        "snapshot fact revision does not match its watermark"
+                    )
+                facts = self._load_facts_at_seq(seq)
+            return facts, state, snapshot
+
+        catalog_rev = self.catalog_revision() or "G0"
+        state = self.load_catalog_state(catalog_rev)
+        facts = self._load_active_facts_current()
+        cut = Cut(
+            catalog_revision=catalog_rev,
+            fact_revision=self.fact_revision(),
+            fact_watermark=self.fact_watermark(),
+        )
+        return facts, state, cut
 
     # -------------------------------------------------------------- products
     def build_product(

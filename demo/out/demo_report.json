@@ -9,12 +9,14 @@
       },
       "edge_delta": {
         "add": [],
+        "add_cabinets": [],
         "remove": [
           [
             "L",
             "A"
           ]
-        ]
+        ],
+        "remove_cabinets": []
       },
       "facts": [
         {

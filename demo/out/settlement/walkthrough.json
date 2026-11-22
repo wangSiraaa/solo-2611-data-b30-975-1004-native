@@ -1,0 +1,451 @@
+{
+  "format": "settlement-walkthrough/1",
+  "scenes": [
+    {
+      "cut": {
+        "catalog_revision": "G1",
+        "fact_revision": "F1",
+        "fact_watermark": 1
+      },
+      "flow_verification": true,
+      "flows": {
+        "X": {
+          "amount": 1,
+          "direct_classes": [
+            "L"
+          ],
+          "revision": 1,
+          "shares": {
+            "A": {
+              "flows": [
+                {
+                  "fraction": "1/2",
+                  "path": [
+                    "L",
+                    "A"
+                  ]
+                }
+              ],
+              "fraction": "1/2"
+            },
+            "B": {
+              "flows": [
+                {
+                  "fraction": "1/2",
+                  "path": [
+                    "L",
+                    "B"
+                  ]
+                }
+              ],
+              "fraction": "1/2"
+            }
+          }
+        },
+        "Y": {
+          "amount": 1,
+          "direct_classes": [
+            "L"
+          ],
+          "revision": 1,
+          "shares": {
+            "A": {
+              "flows": [
+                {
+                  "fraction": "1/2",
+                  "path": [
+                    "L",
+                    "A"
+                  ]
+                }
+              ],
+              "fraction": "1/2"
+            },
+            "B": {
+              "flows": [
+                {
+                  "fraction": "1/2",
+                  "path": [
+                    "L",
+                    "B"
+                  ]
+                }
+              ],
+              "fraction": "1/2"
+            }
+          }
+        }
+      },
+      "payment": {
+        "X->A": {
+          "fee": 0,
+          "paid": 1,
+          "rounding": "ceil",
+          "share": "1/2"
+        },
+        "X->B": {
+          "fee": 0,
+          "paid": 0,
+          "rounding": "floor",
+          "share": "1/2"
+        },
+        "Y->A": {
+          "fee": 0,
+          "paid": 0,
+          "rounding": "floor",
+          "share": "1/2"
+        },
+        "Y->B": {
+          "fee": 0,
+          "paid": 1,
+          "rounding": "ceil",
+          "share": "1/2"
+        }
+      },
+      "settlement_verification": true,
+      "title": "original shares; diagonal rounding is free",
+      "total_fee": 0
+    },
+    {
+      "cut": {
+        "catalog_revision": "G1",
+        "fact_revision": "F2",
+        "fact_watermark": 2
+      },
+      "flows": {
+        "X": {
+          "amount": 1,
+          "direct_classes": [
+            "B"
+          ],
+          "revision": 2,
+          "shares": {
+            "B": {
+              "flows": [
+                {
+                  "fraction": "1/1",
+                  "path": [
+                    "B"
+                  ]
+                }
+              ],
+              "fraction": "1/1"
+            }
+          }
+        },
+        "Y": {
+          "amount": 1,
+          "direct_classes": [
+            "L"
+          ],
+          "revision": 1,
+          "shares": {
+            "A": {
+              "flows": [
+                {
+                  "fraction": "1/2",
+                  "path": [
+                    "L",
+                    "A"
+                  ]
+                }
+              ],
+              "fraction": "1/2"
+            },
+            "B": {
+              "flows": [
+                {
+                  "fraction": "1/2",
+                  "path": [
+                    "L",
+                    "B"
+                  ]
+                }
+              ],
+              "fraction": "1/2"
+            }
+          }
+        }
+      },
+      "payment": {
+        "X->B": {
+          "fee": 0,
+          "paid": 1,
+          "rounding": "locked",
+          "share": "1/1"
+        },
+        "Y->A": {
+          "fee": 3,
+          "paid": 1,
+          "rounding": "ceil",
+          "share": "1/2"
+        },
+        "Y->B": {
+          "fee": 0,
+          "paid": 0,
+          "rounding": "floor",
+          "share": "1/2"
+        }
+      },
+      "title": "X directly in B, already paid 1 to B; Y must round up to A",
+      "total_fee": 3
+    },
+    {
+      "cut": {
+        "catalog_revision": "G1",
+        "fact_revision": "F3",
+        "fact_watermark": 3
+      },
+      "flows": {
+        "X": {
+          "amount": 1,
+          "direct_classes": [
+            "L"
+          ],
+          "revision": 3,
+          "shares": {
+            "A": {
+              "flows": [
+                {
+                  "fraction": "1/2",
+                  "path": [
+                    "L",
+                    "A"
+                  ]
+                }
+              ],
+              "fraction": "1/2"
+            },
+            "B": {
+              "flows": [
+                {
+                  "fraction": "1/2",
+                  "path": [
+                    "L",
+                    "B"
+                  ]
+                }
+              ],
+              "fraction": "1/2"
+            }
+          }
+        },
+        "Y": {
+          "amount": 1,
+          "direct_classes": [
+            "L"
+          ],
+          "revision": 1,
+          "shares": {
+            "A": {
+              "flows": [
+                {
+                  "fraction": "1/2",
+                  "path": [
+                    "L",
+                    "A"
+                  ]
+                }
+              ],
+              "fraction": "1/2"
+            },
+            "B": {
+              "flows": [
+                {
+                  "fraction": "1/2",
+                  "path": [
+                    "L",
+                    "B"
+                  ]
+                }
+              ],
+              "fraction": "1/2"
+            }
+          }
+        }
+      },
+      "payment": {
+        "X->A": {
+          "fee": 0,
+          "paid": 0,
+          "rounding": "floor",
+          "share": "1/2"
+        },
+        "X->B": {
+          "fee": 3,
+          "paid": 1,
+          "rounding": "locked",
+          "share": "1/2"
+        },
+        "Y->A": {
+          "fee": 3,
+          "paid": 1,
+          "rounding": "ceil",
+          "share": "1/2"
+        },
+        "Y->B": {
+          "fee": 0,
+          "paid": 0,
+          "rounding": "floor",
+          "share": "1/2"
+        }
+      },
+      "title": "original shares restored, X->B locked at 1; both ups cost 6",
+      "total_fee": 6
+    },
+    {
+      "cut": {
+        "catalog_revision": "G1",
+        "fact_revision": "F5",
+        "fact_watermark": 5
+      },
+      "flows": {
+        "X": {
+          "amount": 1,
+          "direct_classes": [
+            "L"
+          ],
+          "revision": 4,
+          "shares": {
+            "A": {
+              "flows": [
+                {
+                  "fraction": "1/2",
+                  "path": [
+                    "L",
+                    "A"
+                  ]
+                }
+              ],
+              "fraction": "1/2"
+            },
+            "B": {
+              "flows": [
+                {
+                  "fraction": "1/2",
+                  "path": [
+                    "L",
+                    "B"
+                  ]
+                }
+              ],
+              "fraction": "1/2"
+            }
+          }
+        },
+        "Y": {
+          "amount": 1,
+          "direct_classes": [
+            "L"
+          ],
+          "revision": 1,
+          "shares": {
+            "A": {
+              "flows": [
+                {
+                  "fraction": "1/2",
+                  "path": [
+                    "L",
+                    "A"
+                  ]
+                }
+              ],
+              "fraction": "1/2"
+            },
+            "B": {
+              "flows": [
+                {
+                  "fraction": "1/2",
+                  "path": [
+                    "L",
+                    "B"
+                  ]
+                }
+              ],
+              "fraction": "1/2"
+            }
+          }
+        }
+      },
+      "original_cut": {
+        "catalog_revision": "G1",
+        "fact_revision": "F1",
+        "fact_watermark": 1
+      },
+      "original_cut_reproduces": true,
+      "reopen_cut_fact_revision": "F5",
+      "reopened_revision": 4,
+      "title": "reopen X at revision 4 and re-settle; balances reproduce",
+      "total_fee": 0
+    },
+    {
+      "amount_total": 3,
+      "no_payment_fabricated": true,
+      "reasons": [
+        "cabinet C: needs 1 more ceiling choices but only 0 free fractional cells exist (already locked up: 0)"
+      ],
+      "status": "infeasible",
+      "target_total": 3,
+      "title": "column targets sum correctly but C has no cell to round up",
+      "verification": true
+    },
+    {
+      "committed_cut": {
+        "catalog_revision": "G2",
+        "fact_revision": "F6",
+        "fact_watermark": 6
+      },
+      "cut": {
+        "catalog_revision": "G2",
+        "fact_revision": "F6",
+        "fact_watermark": 6
+      },
+      "flows": {
+        "X": {
+          "amount": 1,
+          "direct_classes": [
+            "L"
+          ],
+          "revision": 4,
+          "shares": {
+            "A": {
+              "flows": [
+                {
+                  "fraction": "1/1",
+                  "path": [
+                    "L",
+                    "A"
+                  ]
+                }
+              ],
+              "fraction": "1/1"
+            }
+          }
+        },
+        "Y": {
+          "amount": 2,
+          "direct_classes": [
+            "L"
+          ],
+          "revision": 2,
+          "shares": {
+            "A": {
+              "flows": [
+                {
+                  "fraction": "2/1",
+                  "path": [
+                    "L",
+                    "A"
+                  ]
+                }
+              ],
+              "fraction": "2/1"
+            }
+          }
+        }
+      },
+      "ledger_cut_matches_commit": true,
+      "title": "old bundle changed edge L->B and Y's amount; one cut only"
+    }
+  ]
+}

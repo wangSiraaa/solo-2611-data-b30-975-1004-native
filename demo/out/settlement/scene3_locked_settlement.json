@@ -1,0 +1,132 @@
+{
+  "cells": [
+    {
+      "cabinet": "A",
+      "ceil": 1,
+      "fee": 0,
+      "floor": 0,
+      "locked": null,
+      "paid": 0,
+      "rounding": "floor",
+      "share": {
+        "den": 2,
+        "num": 1,
+        "text": "1/2"
+      },
+      "ticket_id": "X"
+    },
+    {
+      "cabinet": "B",
+      "ceil": 1,
+      "fee": 3,
+      "floor": 0,
+      "locked": 1,
+      "paid": 1,
+      "rounding": "locked",
+      "share": {
+        "den": 2,
+        "num": 1,
+        "text": "1/2"
+      },
+      "ticket_id": "X"
+    },
+    {
+      "cabinet": "A",
+      "ceil": 1,
+      "fee": 3,
+      "floor": 0,
+      "locked": null,
+      "paid": 1,
+      "rounding": "ceil",
+      "share": {
+        "den": 2,
+        "num": 1,
+        "text": "1/2"
+      },
+      "ticket_id": "Y"
+    },
+    {
+      "cabinet": "B",
+      "ceil": 1,
+      "fee": 0,
+      "floor": 0,
+      "locked": null,
+      "paid": 0,
+      "rounding": "floor",
+      "share": {
+        "den": 2,
+        "num": 1,
+        "text": "1/2"
+      },
+      "ticket_id": "Y"
+    }
+  ],
+  "columns": [
+    {
+      "cabinet": "A",
+      "fee": 3,
+      "ok": true,
+      "paid": 1,
+      "target": 1,
+      "upward_roundings": 1
+    },
+    {
+      "cabinet": "B",
+      "fee": 3,
+      "ok": true,
+      "paid": 1,
+      "target": 1,
+      "upward_roundings": 1
+    }
+  ],
+  "cut": {
+    "catalog_revision": "G1",
+    "fact_revision": "F3",
+    "fact_watermark": 3
+  },
+  "format": "settlement/1",
+  "inputs": {
+    "amounts": {
+      "X": 1,
+      "Y": 1
+    },
+    "fees": {
+      "X|A": 0,
+      "X|B": 3,
+      "Y|A": 3,
+      "Y|B": 0
+    },
+    "locked": {
+      "X|B": 1
+    },
+    "targets": {
+      "A": 1,
+      "B": 1
+    }
+  },
+  "locked": [
+    {
+      "cabinet": "B",
+      "paid": 1,
+      "preserved": true,
+      "ticket_id": "X"
+    }
+  ],
+  "reasons": [],
+  "rows": [
+    {
+      "amount": 1,
+      "ok": true,
+      "paid": 1,
+      "ticket_id": "X"
+    },
+    {
+      "amount": 1,
+      "ok": true,
+      "paid": 1,
+      "ticket_id": "Y"
+    }
+  ],
+  "status": "settled",
+  "total_fee": 6
+}

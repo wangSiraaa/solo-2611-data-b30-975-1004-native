@@ -1,0 +1,115 @@
+{
+  "cells": [
+    {
+      "cabinet": "A",
+      "ceil": 1,
+      "floor": 0,
+      "locked": null,
+      "paid": null,
+      "share": {
+        "den": 2,
+        "num": 1,
+        "text": "1/2"
+      },
+      "ticket_id": "P"
+    },
+    {
+      "cabinet": "B",
+      "ceil": 1,
+      "floor": 0,
+      "locked": null,
+      "paid": null,
+      "share": {
+        "den": 2,
+        "num": 1,
+        "text": "1/2"
+      },
+      "ticket_id": "P"
+    },
+    {
+      "cabinet": "C",
+      "ceil": 1,
+      "floor": 1,
+      "locked": null,
+      "paid": null,
+      "share": {
+        "den": 1,
+        "num": 1,
+        "text": "1/1"
+      },
+      "ticket_id": "Q"
+    },
+    {
+      "cabinet": "C",
+      "ceil": 1,
+      "floor": 1,
+      "locked": null,
+      "paid": null,
+      "share": {
+        "den": 1,
+        "num": 1,
+        "text": "1/1"
+      },
+      "ticket_id": "R"
+    }
+  ],
+  "columns": [
+    {
+      "cabinet": "A",
+      "free_fractional_cells": 1,
+      "required_upward_roundings": 0
+    },
+    {
+      "cabinet": "B",
+      "free_fractional_cells": 1,
+      "required_upward_roundings": 0
+    },
+    {
+      "cabinet": "C",
+      "free_fractional_cells": 0,
+      "required_upward_roundings": 1
+    }
+  ],
+  "cut": {
+    "catalog_revision": "G1",
+    "fact_revision": "F5",
+    "fact_watermark": 5
+  },
+  "format": "settlement/1",
+  "inputs": {
+    "amounts": {
+      "P": 1,
+      "Q": 1,
+      "R": 1
+    },
+    "fees": {},
+    "locked": {},
+    "targets": {
+      "A": 0,
+      "B": 0,
+      "C": 3
+    }
+  },
+  "reasons": [
+    "cabinet C: needs 1 more ceiling choices but only 0 free fractional cells exist (already locked up: 0)"
+  ],
+  "rows": [
+    {
+      "free_fractional_cells": 2,
+      "required_upward_roundings": 1,
+      "ticket_id": "P"
+    },
+    {
+      "free_fractional_cells": 0,
+      "required_upward_roundings": 0,
+      "ticket_id": "Q"
+    },
+    {
+      "free_fractional_cells": 0,
+      "required_upward_roundings": 0,
+      "ticket_id": "R"
+    }
+  ],
+  "status": "infeasible",
+  "total_fee": null
+}

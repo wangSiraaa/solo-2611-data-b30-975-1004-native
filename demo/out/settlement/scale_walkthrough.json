@@ -1,0 +1,178 @@
+{
+  "format": "settlement-scale-walkthrough/1",
+  "scenes": [
+    {
+      "already_locked_cells": 336,
+      "cabinets": 21,
+      "column_check": [
+        {
+          "cabinet": "C00",
+          "ok": true,
+          "paid": 5135,
+          "target": 5135
+        },
+        {
+          "cabinet": "C01",
+          "ok": true,
+          "paid": 2785,
+          "target": 2785
+        },
+        {
+          "cabinet": "C02",
+          "ok": true,
+          "paid": 1529,
+          "target": 1529
+        },
+        {
+          "cabinet": "C03",
+          "ok": true,
+          "paid": 3057,
+          "target": 3057
+        },
+        {
+          "cabinet": "C04",
+          "ok": true,
+          "paid": 3988,
+          "target": 3988
+        },
+        {
+          "cabinet": "C05",
+          "ok": true,
+          "paid": 2195,
+          "target": 2195
+        },
+        {
+          "cabinet": "C06",
+          "ok": true,
+          "paid": 2437,
+          "target": 2437
+        },
+        {
+          "cabinet": "C07",
+          "ok": true,
+          "paid": 3116,
+          "target": 3116
+        },
+        {
+          "cabinet": "C08",
+          "ok": true,
+          "paid": 1144,
+          "target": 1144
+        },
+        {
+          "cabinet": "C09",
+          "ok": true,
+          "paid": 3398,
+          "target": 3398
+        },
+        {
+          "cabinet": "C10",
+          "ok": true,
+          "paid": 2648,
+          "target": 2648
+        },
+        {
+          "cabinet": "C11",
+          "ok": true,
+          "paid": 2307,
+          "target": 2307
+        },
+        {
+          "cabinet": "C12",
+          "ok": true,
+          "paid": 3601,
+          "target": 3601
+        },
+        {
+          "cabinet": "C13",
+          "ok": true,
+          "paid": 3520,
+          "target": 3520
+        },
+        {
+          "cabinet": "C14",
+          "ok": true,
+          "paid": 953,
+          "target": 953
+        },
+        {
+          "cabinet": "C15",
+          "ok": true,
+          "paid": 3001,
+          "target": 3001
+        },
+        {
+          "cabinet": "C16",
+          "ok": true,
+          "paid": 3044,
+          "target": 3044
+        },
+        {
+          "cabinet": "C17",
+          "ok": true,
+          "paid": 2722,
+          "target": 2722
+        },
+        {
+          "cabinet": "C18",
+          "ok": true,
+          "paid": 2210,
+          "target": 2210
+        },
+        {
+          "cabinet": "C19",
+          "ok": true,
+          "paid": 2699,
+          "target": 2699
+        },
+        {
+          "cabinet": "C20",
+          "ok": true,
+          "paid": 300,
+          "target": 300
+        }
+      ],
+      "cut": {
+        "catalog_revision": "G1",
+        "fact_revision": "F1",
+        "fact_watermark": 1
+      },
+      "flow_verification": true,
+      "fractional_cells": 177,
+      "settlement_verification": true,
+      "status": "settled",
+      "targets_sum": 55789,
+      "ticket_total": 55789,
+      "tickets": 200,
+      "title": "200 tickets / 21 cabinets: exact flows then whole-cent settlement",
+      "total_fee": 267
+    },
+    {
+      "cut": {
+        "catalog_revision": "G1",
+        "fact_revision": "F3",
+        "fact_watermark": 3
+      },
+      "new_revision": 2,
+      "old_revision": 1,
+      "original_cut_still_reads_same_flows": true,
+      "status": "settled",
+      "title": "withdraw and re-open T002, then re-settle",
+      "total_fee": 261,
+      "victim": "T002"
+    },
+    {
+      "brick_cabinet": "C11",
+      "cent_taken_from": "C02",
+      "no_payment_fabricated": true,
+      "reasons": [
+        "cabinet C11: needs 1 more ceiling choices but only 0 free fractional cells exist (already locked up: 0)"
+      ],
+      "status": "infeasible",
+      "target_total": 55789,
+      "ticket_total": 55789,
+      "title": "column targets total correctly, yet a cabinet has no cent to round",
+      "verification": true
+    }
+  ]
+}

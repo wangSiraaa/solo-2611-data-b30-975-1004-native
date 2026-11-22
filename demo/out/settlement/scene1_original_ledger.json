@@ -1,0 +1,142 @@
+{
+  "cabinets": [
+    "A",
+    "B"
+  ],
+  "catalog_revision": "G1",
+  "cut": {
+    "catalog_revision": "G1",
+    "fact_revision": "F1",
+    "fact_watermark": 1
+  },
+  "format": "split-ledger/1",
+  "public_cabinet": "public-cabinet",
+  "tickets": [
+    {
+      "amount": 1,
+      "direct_classes": [
+        "L"
+      ],
+      "revision": 1,
+      "shares": [
+        {
+          "cabinet": "A",
+          "flows": [
+            {
+              "path": [
+                "L",
+                "A"
+              ],
+              "share": {
+                "den": 2,
+                "num": 1,
+                "text": "1/2"
+              }
+            }
+          ],
+          "share": {
+            "den": 2,
+            "num": 1,
+            "text": "1/2"
+          }
+        },
+        {
+          "cabinet": "B",
+          "flows": [
+            {
+              "path": [
+                "L",
+                "B"
+              ],
+              "share": {
+                "den": 2,
+                "num": 1,
+                "text": "1/2"
+              }
+            }
+          ],
+          "share": {
+            "den": 2,
+            "num": 1,
+            "text": "1/2"
+          }
+        }
+      ],
+      "ticket_id": "X",
+      "total": {
+        "den": 1,
+        "num": 1,
+        "text": "1/1"
+      }
+    },
+    {
+      "amount": 1,
+      "direct_classes": [
+        "L"
+      ],
+      "revision": 1,
+      "shares": [
+        {
+          "cabinet": "A",
+          "flows": [
+            {
+              "path": [
+                "L",
+                "A"
+              ],
+              "share": {
+                "den": 2,
+                "num": 1,
+                "text": "1/2"
+              }
+            }
+          ],
+          "share": {
+            "den": 2,
+            "num": 1,
+            "text": "1/2"
+          }
+        },
+        {
+          "cabinet": "B",
+          "flows": [
+            {
+              "path": [
+                "L",
+                "B"
+              ],
+              "share": {
+                "den": 2,
+                "num": 1,
+                "text": "1/2"
+              }
+            }
+          ],
+          "share": {
+            "den": 2,
+            "num": 1,
+            "text": "1/2"
+          }
+        }
+      ],
+      "ticket_id": "Y",
+      "total": {
+        "den": 1,
+        "num": 1,
+        "text": "1/1"
+      }
+    }
+  ],
+  "totals": {
+    "A": {
+      "den": 1,
+      "num": 1,
+      "text": "1/1"
+    },
+    "B": {
+      "den": 1,
+      "num": 1,
+      "text": "1/1"
+    }
+  }
+}

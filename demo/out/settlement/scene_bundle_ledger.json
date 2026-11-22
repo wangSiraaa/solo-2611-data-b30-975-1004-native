@@ -1,0 +1,95 @@
+{
+  "cabinets": [
+    "A",
+    "B"
+  ],
+  "catalog_revision": "G2",
+  "cut": {
+    "catalog_revision": "G2",
+    "fact_revision": "F6",
+    "fact_watermark": 6
+  },
+  "format": "split-ledger/1",
+  "public_cabinet": "public-cabinet",
+  "tickets": [
+    {
+      "amount": 1,
+      "direct_classes": [
+        "L"
+      ],
+      "revision": 4,
+      "shares": [
+        {
+          "cabinet": "A",
+          "flows": [
+            {
+              "path": [
+                "L",
+                "A"
+              ],
+              "share": {
+                "den": 1,
+                "num": 1,
+                "text": "1/1"
+              }
+            }
+          ],
+          "share": {
+            "den": 1,
+            "num": 1,
+            "text": "1/1"
+          }
+        }
+      ],
+      "ticket_id": "X",
+      "total": {
+        "den": 1,
+        "num": 1,
+        "text": "1/1"
+      }
+    },
+    {
+      "amount": 2,
+      "direct_classes": [
+        "L"
+      ],
+      "revision": 2,
+      "shares": [
+        {
+          "cabinet": "A",
+          "flows": [
+            {
+              "path": [
+                "L",
+                "A"
+              ],
+              "share": {
+                "den": 1,
+                "num": 2,
+                "text": "2/1"
+              }
+            }
+          ],
+          "share": {
+            "den": 1,
+            "num": 2,
+            "text": "2/1"
+          }
+        }
+      ],
+      "ticket_id": "Y",
+      "total": {
+        "den": 1,
+        "num": 2,
+        "text": "2/1"
+      }
+    }
+  ],
+  "totals": {
+    "A": {
+      "den": 1,
+      "num": 3,
+      "text": "3/1"
+    }
+  }
+}

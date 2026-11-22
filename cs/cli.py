@@ -6,9 +6,13 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from fractions import Fraction
 from pathlib import Path
 from typing import Any
 
+from . import settle as settle_module
+from . import split as split_module
+from .split import frac_from
 from .store import (
     CatalogError,
     ConflictError,
@@ -237,6 +241,78 @@ def cmd_history(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_split(args: argparse.Namespace) -> int:
+    with _open(args) as store:
+        if args.ticket:
+            result = store.split_ticket(
+                args.ticket, public_cabinet=args.public_cabinet
+            )
+            if args.out:
+                Path(args.out).write_text(
+                    json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+                    encoding="utf-8",
+                )
+            _dump(result)
+            return 0
+        ledger = store.build_split_ledger(public_cabinet=args.public_cabinet)
+        state = store.load_catalog_state(ledger["cut"]["catalog_revision"])
+        verification = split_module.verify_ledger(
+            ledger, edges=state.edges, cabinets=state.cabinets
+        )
+        ledger["verification"] = verification
+        if args.out:
+            Path(args.out).write_text(
+                json.dumps(ledger, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+        _dump(ledger)
+    return 0
+
+
+def cmd_settle(args: argparse.Namespace) -> int:
+    request = _read_json(args.request)
+    report = settle_module.solve_settlement(
+        _fraction_shares(request.get("shares", {})),
+        request.get("amounts", {}),
+        request.get("targets", {}),
+        locked=_tuple_keys(request.get("locked", {})),
+        fees=_tuple_keys(request.get("fees", {})),
+        cut=request.get("cut"),
+    )
+    if args.out:
+        Path(args.out).write_text(
+            json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+    _dump(report)
+    return 0
+
+
+def cmd_verify_settlement(args: argparse.Namespace) -> int:
+    report = _read_json(args.report)
+    result = settle_module.verify_settlement(
+        report, re_solve=args.re_solve
+    )
+    _dump(result)
+    return 1 if not result["ok"] else 0
+
+
+def _fraction_shares(raw: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    shares: dict[str, dict[str, Any]] = {}
+    for ticket_id, per_cabinet in raw.items():
+        shares[ticket_id] = {}
+        for cabinet, value in per_cabinet.items():
+            if isinstance(value, dict):
+                shares[ticket_id][cabinet] = frac_from(value)
+            else:
+                shares[ticket_id][cabinet] = Fraction(str(value))
+    return shares
+
+
+def _tuple_keys(raw: dict[str, Any]) -> dict[tuple[str, str], int]:
+    return {tuple(key.split("|", 1)): int(value) for key, value in raw.items()}
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m cs",
@@ -291,6 +367,22 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("history", help="show committed events")
     p.set_defaults(func=cmd_history)
+
+    p = sub.add_parser("split", help="exact per-ticket cabinet flow (split-ledger/1)")
+    p.add_argument("ticket", nargs="?", help="one ticket id for a single-ticket query")
+    p.add_argument("--public-cabinet", default="public-cabinet")
+    p.add_argument("--out", help="write the ledger JSON here")
+    p.set_defaults(func=cmd_split)
+
+    p = sub.add_parser("settle", help="integer settlement of exact shares (settlement/1)")
+    p.add_argument("request", help="JSON with shares/amounts/targets/locked/fees")
+    p.add_argument("--out", help="write the settlement JSON here")
+    p.set_defaults(func=cmd_settle)
+
+    p = sub.add_parser("verify-settlement", help="independently check a settlement")
+    p.add_argument("report", help="settlement/1 JSON file")
+    p.add_argument("--re-solve", action="store_true", help="also confirm minimal fee")
+    p.set_defaults(func=cmd_verify_settlement)
 
     return parser
 
