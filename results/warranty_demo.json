@@ -1,0 +1,873 @@
+{
+  "checks": [
+    {
+      "actual": [
+        "uA"
+      ],
+      "check": "coupon_lands_on_exactly_one_physical_unit",
+      "expected": [
+        "uA"
+      ],
+      "ok": true
+    },
+    {
+      "actual": 5,
+      "check": "unit_a_budget_5_from_base_plus_addendum",
+      "expected": 5,
+      "ok": true
+    },
+    {
+      "actual": 3,
+      "check": "unit_b_budget_3_base_only",
+      "expected": 3,
+      "ok": true
+    },
+    {
+      "actual": [
+        3,
+        8,
+        7
+      ],
+      "check": "uA_paused_3_expiry_day_8_latest_start_7",
+      "expected": [
+        3,
+        8,
+        7
+      ],
+      "ok": true
+    },
+    {
+      "actual": [
+        3,
+        6,
+        5
+      ],
+      "check": "uB_paused_3_expiry_day_6_latest_start_5",
+      "expected": [
+        3,
+        6,
+        5
+      ],
+      "ok": true
+    },
+    {
+      "actual": [
+        4,
+        9
+      ],
+      "check": "literal_half_open_union_is_four_days",
+      "expected": [
+        4,
+        9
+      ],
+      "ok": true
+    },
+    {
+      "actual": true,
+      "check": "desk_uA_day7_covered",
+      "expected": true,
+      "ok": true
+    },
+    {
+      "actual": [
+        false,
+        "WARRANTY_BUDGET_EXHAUSTED"
+      ],
+      "check": "desk_uA_day8_expired_budget",
+      "expected": [
+        false,
+        "WARRANTY_BUDGET_EXHAUSTED"
+      ],
+      "ok": true
+    },
+    {
+      "actual": false,
+      "check": "desk_uB_day7_expired",
+      "expected": false,
+      "ok": true
+    },
+    {
+      "actual": [
+        "EXT",
+        3
+      ],
+      "check": "desk_explains_origin_coupon_and_paused",
+      "expected": [
+        "EXT",
+        3
+      ],
+      "ok": true
+    },
+    {
+      "actual": 6,
+      "check": "peer_base_unit_expires_day_6_despite_same_outages",
+      "expected": 6,
+      "ok": true
+    },
+    {
+      "actual": [
+        2,
+        17
+      ],
+      "check": "backdate_creates_version_2_expiry_17",
+      "expected": [
+        2,
+        17
+      ],
+      "ok": true
+    },
+    {
+      "actual": [
+        1,
+        true
+      ],
+      "check": "old_desk_answer_pinned_to_version_1",
+      "expected": [
+        1,
+        true
+      ],
+      "ok": true
+    },
+    {
+      "actual": [
+        3,
+        0
+      ],
+      "check": "post_expiry_outage_keeps_expiry_day_3",
+      "expected": [
+        3,
+        0
+      ],
+      "ok": true
+    },
+    {
+      "actual": 2,
+      "check": "post_expiry_days_reported_as_ineffectual",
+      "expected": 2,
+      "ok": true
+    },
+    {
+      "actual": [
+        "RETURNED_EXIT",
+        2,
+        1
+      ],
+      "check": "return_sets_cover_until_day_2",
+      "expected": [
+        "RETURNED_EXIT",
+        2,
+        1
+      ],
+      "ok": true
+    },
+    {
+      "actual": [
+        true,
+        7
+      ],
+      "check": "brief_accepts_uA_on_day7",
+      "expected": [
+        true,
+        7
+      ],
+      "ok": true
+    },
+    {
+      "actual": [
+        false,
+        "NO_COVERED_START_DAY"
+      ],
+      "check": "brief_rejects_uB_no_covered_start",
+      "expected": [
+        false,
+        "NO_COVERED_START_DAY"
+      ],
+      "ok": true
+    },
+    {
+      "actual": [
+        false,
+        "NO_SLOT_WITHIN_HORIZON"
+      ],
+      "check": "two_day_method_rejected_with_single_free_day",
+      "expected": [
+        false,
+        "NO_SLOT_WITHIN_HORIZON"
+      ],
+      "ok": true
+    },
+    {
+      "actual": 390,
+      "check": "rush_matches_brute_force_max_value",
+      "expected": 390,
+      "ok": true
+    },
+    {
+      "actual": 390,
+      "check": "rush_accepts_three_highest_value",
+      "expected": 390,
+      "ok": true
+    },
+    {
+      "actual": [
+        true,
+        2,
+        1
+      ],
+      "check": "historical_order_uses_pinned_v1_start_day_2",
+      "expected": [
+        true,
+        2,
+        1
+      ],
+      "ok": true
+    },
+    {
+      "actual": 500,
+      "check": "reopen_preserves_booking_and_query",
+      "expected": 500,
+      "ok": true
+    }
+  ],
+  "database": "/workspace/data/warranty_demo.db",
+  "scenarios": {
+    "deal_allocation": {
+      "assignments": {
+        "EXT": [
+          "uA"
+        ]
+      },
+      "per_unit_paid": [
+        {
+          "coupon_id": "EXT",
+          "paid": 900,
+          "unit_id": "uA"
+        },
+        {
+          "coupon_id": null,
+          "paid": 1000,
+          "unit_id": "uB"
+        }
+      ]
+    },
+    "historical_version": {
+      "current_version": 2,
+      "old_batch_decision": {
+        "accepted": true,
+        "days": [
+          2
+        ],
+        "end_day": 3,
+        "method_id": "hm",
+        "repair_value": 100,
+        "start_day": 2,
+        "technician_id": "hist-tech",
+        "warranty_version": 1,
+        "work_order_id": "OLD"
+      },
+      "order_pinned_version": 1,
+      "stored_decision": {
+        "accepted": true,
+        "days": [
+          2
+        ],
+        "end_day": 3,
+        "method_id": "hm",
+        "repair_value": 100,
+        "start_day": 2,
+        "technician_id": "hist-tech",
+        "warranty_version": 1,
+        "work_order_id": "OLD"
+      }
+    },
+    "late_backdate": {
+      "answer_before": {
+        "cover_until_day": 15,
+        "covered": true,
+        "end_reason": "WARRANTY_BUDGET_EXHAUSTED",
+        "expiry_day": 15,
+        "ineffectual_outage_days": 0,
+        "latest_start_day": 14,
+        "ok": true,
+        "outages": [],
+        "paused_days": 0,
+        "query_day": 12,
+        "query_id": "desk-early",
+        "reason": "ACTIVE",
+        "sale_id": "S3",
+        "sku": "R",
+        "sold_day": 10,
+        "term": {
+          "base_days": 3,
+          "bonus_days": 2,
+          "coupon_id": "EXT",
+          "term_id": "w-base",
+          "warranty_days": 5
+        },
+        "unit_id": "d1",
+        "warranty_version": 1
+      },
+      "historical_answer_kept": {
+        "cover_until_day": 15,
+        "covered": true,
+        "end_reason": "WARRANTY_BUDGET_EXHAUSTED",
+        "expiry_day": 15,
+        "ineffectual_outage_days": 0,
+        "latest_start_day": 14,
+        "ok": true,
+        "outages": [],
+        "paused_days": 0,
+        "query_day": 12,
+        "query_id": "desk-early",
+        "reason": "ACTIVE",
+        "sale_id": "S3",
+        "sku": "R",
+        "sold_day": 10,
+        "term": {
+          "base_days": 3,
+          "bonus_days": 2,
+          "coupon_id": "EXT",
+          "term_id": "w-base",
+          "warranty_days": 5
+        },
+        "unit_id": "d1",
+        "warranty_version": 1
+      },
+      "versions": [
+        {
+          "based_on_records": [],
+          "cover_until_day": 15,
+          "end_reason": "WARRANTY_BUDGET_EXHAUSTED",
+          "expiry_day": 15,
+          "latest_start_day": 14,
+          "paused_days": 0,
+          "version": 1,
+          "warranty_days": 5
+        },
+        {
+          "based_on_records": [
+            "late-factory"
+          ],
+          "cover_until_day": 17,
+          "end_reason": "WARRANTY_BUDGET_EXHAUSTED",
+          "expiry_day": 17,
+          "latest_start_day": 16,
+          "paused_days": 2,
+          "version": 2,
+          "warranty_days": 5
+        }
+      ],
+      "warranty_after": {
+        "base_days": 3,
+        "bonus_days": 2,
+        "coupon_id": "EXT",
+        "cover_until_day": 17,
+        "current_version": 2,
+        "end_reason": "WARRANTY_BUDGET_EXHAUSTED",
+        "expiry_day": 17,
+        "latest_start_day": 16,
+        "paused_days": 2,
+        "sale_id": "S3",
+        "sku": "R",
+        "sold_day": 10,
+        "term_id": "w-base",
+        "unit_id": "d1",
+        "warranty_days": 5
+      }
+    },
+    "literal_interval_disclosure": {
+      "expiry_day": 9,
+      "intervals": [
+        [
+          1,
+          4
+        ],
+        [
+          2,
+          5
+        ]
+      ],
+      "note": "严格左闭右开+重叠取并 => 并集4天; 题面文字称3天, 故主动用 [1,3)+[2,4) 复现其目标到期日",
+      "paused_days": 4,
+      "union": [
+        [
+          1,
+          5
+        ]
+      ]
+    },
+    "overlapping_outages": {
+      "uA": {
+        "base_days": 3,
+        "bonus_days": 2,
+        "coupon_id": "EXT",
+        "cover_until_day": 8,
+        "current_version": 3,
+        "end_reason": "WARRANTY_BUDGET_EXHAUSTED",
+        "expiry_day": 8,
+        "latest_start_day": 7,
+        "paused_days": 3,
+        "sale_id": "S1",
+        "sku": "R",
+        "sold_day": 0,
+        "term_id": "w-base",
+        "unit_id": "uA",
+        "warranty_days": 5
+      },
+      "uB": {
+        "base_days": 3,
+        "bonus_days": 0,
+        "coupon_id": null,
+        "cover_until_day": 6,
+        "current_version": 3,
+        "end_reason": "WARRANTY_BUDGET_EXHAUSTED",
+        "expiry_day": 6,
+        "latest_start_day": 5,
+        "paused_days": 3,
+        "sale_id": "S1",
+        "sku": "R",
+        "sold_day": 0,
+        "term_id": "w-base",
+        "unit_id": "uB",
+        "warranty_days": 3
+      }
+    },
+    "peer_allocation": {
+      "base_only_unit": "n2",
+      "base_only_warranty": {
+        "base_days": 3,
+        "bonus_days": 0,
+        "coupon_id": null,
+        "cover_until_day": 6,
+        "current_version": 3,
+        "end_reason": "WARRANTY_BUDGET_EXHAUSTED",
+        "expiry_day": 6,
+        "latest_start_day": 5,
+        "paused_days": 3,
+        "sale_id": "S2",
+        "sku": "R",
+        "sold_day": 0,
+        "term_id": "w-base",
+        "unit_id": "n2",
+        "warranty_days": 3
+      },
+      "coupon_unit": "n1"
+    },
+    "post_expiry_outage": {
+      "query_day6": {
+        "cover_until_day": 3,
+        "covered": false,
+        "end_reason": "WARRANTY_BUDGET_EXHAUSTED",
+        "expiry_day": 3,
+        "ineffectual_outage_days": 2,
+        "latest_start_day": 2,
+        "ok": true,
+        "outages": [
+          {
+            "effective_paused_days": 0,
+            "end_day": 7,
+            "post_expiry_days": 2,
+            "pre_sale_days": 0,
+            "record_id": "post-death",
+            "start_day": 5
+          }
+        ],
+        "paused_days": 0,
+        "query_day": 6,
+        "query_id": "desk-dead",
+        "reason": "WARRANTY_BUDGET_EXHAUSTED",
+        "sale_id": "S4",
+        "sku": "R",
+        "sold_day": 0,
+        "term": {
+          "base_days": 3,
+          "bonus_days": 0,
+          "coupon_id": null,
+          "term_id": "w-base",
+          "warranty_days": 3
+        },
+        "unit_id": "e1",
+        "warranty_version": 2
+      },
+      "warranty": {
+        "base_days": 3,
+        "bonus_days": 0,
+        "coupon_id": null,
+        "cover_until_day": 3,
+        "current_version": 2,
+        "end_reason": "WARRANTY_BUDGET_EXHAUSTED",
+        "expiry_day": 3,
+        "latest_start_day": 2,
+        "paused_days": 0,
+        "sale_id": "S4",
+        "sku": "R",
+        "sold_day": 0,
+        "term_id": "w-base",
+        "unit_id": "e1",
+        "warranty_days": 3
+      }
+    },
+    "repair_brief": {
+      "accepted": 1,
+      "decisions": [
+        {
+          "accepted": true,
+          "days": [
+            7
+          ],
+          "end_day": 8,
+          "method_id": "m1d",
+          "repair_value": 500,
+          "start_day": 7,
+          "technician_id": "tech-day7",
+          "warranty_version": 3,
+          "work_order_id": "WO-A"
+        },
+        {
+          "accepted": false,
+          "reason_code": "NO_COVERED_START_DAY",
+          "reason_detail": "warranty latest_start_day=5 precedes delivery_day=6",
+          "warranty_version": 3,
+          "work_order_id": "WO-B"
+        }
+      ],
+      "horizon_end_day": 30,
+      "ok": true,
+      "rejected": 1,
+      "total_value": 500
+    },
+    "repair_two_day_one_slot": {
+      "accepted": 0,
+      "decisions": [
+        {
+          "accepted": false,
+          "reason_code": "NO_SLOT_WITHIN_HORIZON",
+          "reason_detail": "qualified technicians have no free consecutive slot in [6, 8)",
+          "warranty_version": 3,
+          "work_order_id": "WO-2D"
+        }
+      ],
+      "horizon_end_day": 30,
+      "ok": true,
+      "rejected": 1,
+      "total_value": 0
+    },
+    "return_exit": {
+      "base_days": 3,
+      "bonus_days": 0,
+      "coupon_id": null,
+      "cover_until_day": 2,
+      "current_version": 2,
+      "end_reason": "RETURNED_EXIT",
+      "expiry_day": 3,
+      "latest_start_day": 1,
+      "paused_days": 0,
+      "sale_id": "S5",
+      "sku": "R",
+      "sold_day": 0,
+      "term_id": "w-base",
+      "unit_id": "r1",
+      "warranty_days": 3
+    },
+    "rush_contention": {
+      "batch": {
+        "accepted": 3,
+        "decisions": [
+          {
+            "accepted": false,
+            "reason_code": "PREEMPTED_BY_HIGHER_VALUE",
+            "reason_detail": "feasible alone but displaced to maximise total repair value under capacity",
+            "warranty_version": 1,
+            "work_order_id": "G0"
+          },
+          {
+            "accepted": false,
+            "reason_code": "PREEMPTED_BY_HIGHER_VALUE",
+            "reason_detail": "feasible alone but displaced to maximise total repair value under capacity",
+            "warranty_version": 1,
+            "work_order_id": "G1"
+          },
+          {
+            "accepted": false,
+            "reason_code": "PREEMPTED_BY_HIGHER_VALUE",
+            "reason_detail": "feasible alone but displaced to maximise total repair value under capacity",
+            "warranty_version": 1,
+            "work_order_id": "G10"
+          },
+          {
+            "accepted": true,
+            "days": [
+              0
+            ],
+            "end_day": 1,
+            "method_id": "gm",
+            "repair_value": 120,
+            "start_day": 0,
+            "technician_id": "rush-tech",
+            "warranty_version": 1,
+            "work_order_id": "G11"
+          },
+          {
+            "accepted": true,
+            "days": [
+              1
+            ],
+            "end_day": 2,
+            "method_id": "gm",
+            "repair_value": 130,
+            "start_day": 1,
+            "technician_id": "rush-tech",
+            "warranty_version": 1,
+            "work_order_id": "G12"
+          },
+          {
+            "accepted": true,
+            "days": [
+              2
+            ],
+            "end_day": 3,
+            "method_id": "gm",
+            "repair_value": 140,
+            "start_day": 2,
+            "technician_id": "rush-tech",
+            "warranty_version": 1,
+            "work_order_id": "G13"
+          },
+          {
+            "accepted": false,
+            "reason_code": "PREEMPTED_BY_HIGHER_VALUE",
+            "reason_detail": "feasible alone but displaced to maximise total repair value under capacity",
+            "warranty_version": 1,
+            "work_order_id": "G2"
+          },
+          {
+            "accepted": false,
+            "reason_code": "PREEMPTED_BY_HIGHER_VALUE",
+            "reason_detail": "feasible alone but displaced to maximise total repair value under capacity",
+            "warranty_version": 1,
+            "work_order_id": "G3"
+          },
+          {
+            "accepted": false,
+            "reason_code": "PREEMPTED_BY_HIGHER_VALUE",
+            "reason_detail": "feasible alone but displaced to maximise total repair value under capacity",
+            "warranty_version": 1,
+            "work_order_id": "G4"
+          },
+          {
+            "accepted": false,
+            "reason_code": "PREEMPTED_BY_HIGHER_VALUE",
+            "reason_detail": "feasible alone but displaced to maximise total repair value under capacity",
+            "warranty_version": 1,
+            "work_order_id": "G5"
+          },
+          {
+            "accepted": false,
+            "reason_code": "PREEMPTED_BY_HIGHER_VALUE",
+            "reason_detail": "feasible alone but displaced to maximise total repair value under capacity",
+            "warranty_version": 1,
+            "work_order_id": "G6"
+          },
+          {
+            "accepted": false,
+            "reason_code": "PREEMPTED_BY_HIGHER_VALUE",
+            "reason_detail": "feasible alone but displaced to maximise total repair value under capacity",
+            "warranty_version": 1,
+            "work_order_id": "G7"
+          },
+          {
+            "accepted": false,
+            "reason_code": "PREEMPTED_BY_HIGHER_VALUE",
+            "reason_detail": "feasible alone but displaced to maximise total repair value under capacity",
+            "warranty_version": 1,
+            "work_order_id": "G8"
+          },
+          {
+            "accepted": false,
+            "reason_code": "PREEMPTED_BY_HIGHER_VALUE",
+            "reason_detail": "feasible alone but displaced to maximise total repair value under capacity",
+            "warranty_version": 1,
+            "work_order_id": "G9"
+          }
+        ],
+        "horizon_end_day": 40,
+        "ok": true,
+        "rejected": 11,
+        "total_value": 390
+      },
+      "brute_force_total": 390
+    },
+    "service_desk": {
+      "uA_day7": {
+        "cover_until_day": 8,
+        "covered": true,
+        "end_reason": "WARRANTY_BUDGET_EXHAUSTED",
+        "expiry_day": 8,
+        "ineffectual_outage_days": 0,
+        "latest_start_day": 7,
+        "ok": true,
+        "outages": [
+          {
+            "effective_paused_days": 2,
+            "end_day": 3,
+            "post_expiry_days": 0,
+            "pre_sale_days": 0,
+            "record_id": "a-o1",
+            "start_day": 1
+          },
+          {
+            "effective_paused_days": 2,
+            "end_day": 4,
+            "post_expiry_days": 0,
+            "pre_sale_days": 0,
+            "record_id": "a-o2",
+            "start_day": 2
+          }
+        ],
+        "paused_days": 3,
+        "query_day": 7,
+        "query_id": "desk-A-7",
+        "reason": "ACTIVE",
+        "sale_id": "S1",
+        "sku": "R",
+        "sold_day": 0,
+        "term": {
+          "base_days": 3,
+          "bonus_days": 2,
+          "coupon_id": "EXT",
+          "term_id": "w-base",
+          "warranty_days": 5
+        },
+        "unit_id": "uA",
+        "warranty_version": 3
+      },
+      "uA_day8": {
+        "cover_until_day": 8,
+        "covered": false,
+        "end_reason": "WARRANTY_BUDGET_EXHAUSTED",
+        "expiry_day": 8,
+        "ineffectual_outage_days": 0,
+        "latest_start_day": 7,
+        "ok": true,
+        "outages": [
+          {
+            "effective_paused_days": 2,
+            "end_day": 3,
+            "post_expiry_days": 0,
+            "pre_sale_days": 0,
+            "record_id": "a-o1",
+            "start_day": 1
+          },
+          {
+            "effective_paused_days": 2,
+            "end_day": 4,
+            "post_expiry_days": 0,
+            "pre_sale_days": 0,
+            "record_id": "a-o2",
+            "start_day": 2
+          }
+        ],
+        "paused_days": 3,
+        "query_day": 8,
+        "query_id": "desk-A-8",
+        "reason": "WARRANTY_BUDGET_EXHAUSTED",
+        "sale_id": "S1",
+        "sku": "R",
+        "sold_day": 0,
+        "term": {
+          "base_days": 3,
+          "bonus_days": 2,
+          "coupon_id": "EXT",
+          "term_id": "w-base",
+          "warranty_days": 5
+        },
+        "unit_id": "uA",
+        "warranty_version": 3
+      },
+      "uB_day7": {
+        "cover_until_day": 6,
+        "covered": false,
+        "end_reason": "WARRANTY_BUDGET_EXHAUSTED",
+        "expiry_day": 6,
+        "ineffectual_outage_days": 0,
+        "latest_start_day": 5,
+        "ok": true,
+        "outages": [
+          {
+            "effective_paused_days": 2,
+            "end_day": 3,
+            "post_expiry_days": 0,
+            "pre_sale_days": 0,
+            "record_id": "b-o1",
+            "start_day": 1
+          },
+          {
+            "effective_paused_days": 2,
+            "end_day": 4,
+            "post_expiry_days": 0,
+            "pre_sale_days": 0,
+            "record_id": "b-o2",
+            "start_day": 2
+          }
+        ],
+        "paused_days": 3,
+        "query_day": 7,
+        "query_id": "desk-B-7",
+        "reason": "WARRANTY_BUDGET_EXHAUSTED",
+        "sale_id": "S1",
+        "sku": "R",
+        "sold_day": 0,
+        "term": {
+          "base_days": 3,
+          "bonus_days": 0,
+          "coupon_id": null,
+          "term_id": "w-base",
+          "warranty_days": 3
+        },
+        "unit_id": "uB",
+        "warranty_version": 3
+      }
+    },
+    "warranty_enrollment": [
+      {
+        "base_days": 3,
+        "bonus_days": 2,
+        "coupon_id": "EXT",
+        "cover_until_day": 5,
+        "current_version": 1,
+        "end_reason": "WARRANTY_BUDGET_EXHAUSTED",
+        "expiry_day": 5,
+        "latest_start_day": 4,
+        "paused_days": 0,
+        "sale_id": "S1",
+        "sku": "R",
+        "sold_day": 0,
+        "term_id": "w-base",
+        "unit_id": "uA",
+        "warranty_days": 5
+      },
+      {
+        "base_days": 3,
+        "bonus_days": 0,
+        "coupon_id": null,
+        "cover_until_day": 3,
+        "current_version": 1,
+        "end_reason": "WARRANTY_BUDGET_EXHAUSTED",
+        "expiry_day": 3,
+        "latest_start_day": 2,
+        "paused_days": 0,
+        "sale_id": "S1",
+        "sku": "R",
+        "sold_day": 0,
+        "term_id": "w-base",
+        "unit_id": "uB",
+        "warranty_days": 3
+      }
+    ]
+  },
+  "summary": {
+    "checks": 23,
+    "failed": 0,
+    "passed": 23
+  }
+}

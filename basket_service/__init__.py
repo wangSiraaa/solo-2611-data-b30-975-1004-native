@@ -19,6 +19,8 @@ from .db import Database
 from .errors import BasketError
 from .ledger import AfterSalesLedger
 from .quote_service import QuoteService
+from .repair import RepairShop
+from .warranty import WarrantyService
 
 
 class Service:
@@ -28,6 +30,8 @@ class Service:
         self.db = Database(path, busy_timeout_ms=busy_timeout_ms)
         self.quotes = QuoteService(self.db)
         self.ledger = AfterSalesLedger(self.db)
+        self.warranties = WarrantyService(self.db)
+        self.repairs = RepairShop(self.db)
 
     # quote surface -------------------------------------------------------
     def publish_snapshot(self, products=None, coupons=None, *, snapshot_id=None) -> str:
@@ -66,6 +70,70 @@ class Service:
 
     def audit_sales(self):
         return self.ledger.audit_sales()
+
+    # warranty surface ----------------------------------------------------
+    def publish_warranty_term(self, term_id, sku, base_days, *, coupon_id=None, bonus_days=0):
+        return self.warranties.publish_term(term_id, sku, base_days, coupon_id=coupon_id, bonus_days=bonus_days)
+
+    def enroll_warranties(self, sale_id, sold_day, *, term_map=None):
+        return self.warranties.enroll_sale(sale_id, sold_day, term_map=term_map)
+
+    def get_warranty(self, sale_id, unit_id):
+        return self.warranties.get_warranty(sale_id, unit_id)
+
+    def list_warranties(self, sale_id):
+        return self.warranties.list_warranties(sale_id)
+
+    def register_outage(self, record_id, sale_id, unit_id, start_day, end_day, *, registered_day=None, note=""):
+        return self.warranties.register_outage(
+            record_id, sale_id, unit_id, start_day, end_day, registered_day=registered_day, note=note
+        )
+
+    def get_outage(self, record_id):
+        return self.warranties.get_outage(record_id)
+
+    def list_outages(self, sale_id, unit_id):
+        return self.warranties.list_outages(sale_id, unit_id)
+
+    def mark_return_exit(self, sale_id, unit_id, return_day, return_request_id):
+        return self.warranties.mark_return_exit(sale_id, unit_id, return_day, return_request_id)
+
+    def query_warranty(self, query_id, sale_id, unit_id, query_day):
+        return self.warranties.query_warranty(query_id, sale_id, unit_id, query_day)
+
+    def get_warranty_query(self, query_id):
+        return self.warranties.get_query(query_id)
+
+    def warranty_versions(self, sale_id, unit_id):
+        return self.warranties.versions(sale_id, unit_id)
+
+    def warranty_version_summary(self, sale_id, unit_id, version):
+        return self.warranties.get_version_summary(sale_id, unit_id, version)
+
+    # repair shop surface -------------------------------------------------
+    def register_repair_method(self, method_id, sku, duration_days, specialty):
+        return self.repairs.register_method(method_id, sku, duration_days, specialty)
+
+    def register_technician(self, technician_id, specialty, *, unavailable=None):
+        return self.repairs.register_technician(technician_id, specialty, unavailable=unavailable)
+
+    def open_work_order(self, work_order_id, sale_id, unit_id, delivery_day, repair_value, method_ids):
+        return self.repairs.open_work_order(work_order_id, sale_id, unit_id, delivery_day, repair_value, method_ids)
+
+    def get_work_order(self, work_order_id):
+        return self.repairs.get_work_order(work_order_id)
+
+    def plan_repairs(self, batch_id, work_order_ids, horizon_end_day):
+        return self.repairs.plan_batch(batch_id, work_order_ids, horizon_end_day)
+
+    def get_repair_batch(self, batch_id):
+        return self.repairs.get_batch(batch_id)
+
+    def get_booking_decision(self, work_order_id):
+        return self.repairs.get_decision(work_order_id)
+
+    def technician_calendar(self, technician_id):
+        return self.repairs.technician_calendar(technician_id)
 
     # cross-cutting -------------------------------------------------------
     def run(self, plan):

@@ -559,6 +559,10 @@ def main(argv: List[str] | None = None) -> int:
     run_plan.add_argument("--db", required=True)
     run_plan.add_argument("--out")
 
+    warranty = sub.add_parser("warranty-demo", help="run the factory-warranty + repair-shop demo")
+    warranty.add_argument("--db", default=str(ROOT / "data" / "warranty_demo.db"))
+    warranty.add_argument("--out", default=str(ROOT / "results" / "warranty_demo.json"))
+
     selfcheck = sub.add_parser("self-check", help="run the unit test suite")
     selfcheck.add_argument("--db", default=str(ROOT / "data" / "selfcheck.db"))
     selfcheck.add_argument("--out", default=str(ROOT / "results" / "self_check.json"))
@@ -574,6 +578,14 @@ def main(argv: List[str] | None = None) -> int:
         result = _run_plan_file(args.db, args.plan, args.out)
         print(json.dumps(result, indent=2, ensure_ascii=False))
         return 0
+    if args.command == "warranty-demo":
+        from .warranty_demo import run_warranty_demo
+
+        os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
+        os.makedirs(os.path.dirname(args.db) or ".", exist_ok=True)
+        result = run_warranty_demo(args.db, args.out)
+        print(json.dumps({"database": args.db, "results": args.out, "summary": result["summary"]}, indent=2, ensure_ascii=False))
+        return 0 if result["summary"]["failed"] == 0 else 1
     if args.command == "self-check":
         import unittest
 

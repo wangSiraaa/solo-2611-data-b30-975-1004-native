@@ -184,5 +184,174 @@ class Database:
                 qty INTEGER NOT NULL,
                 PRIMARY KEY (sku, bucket)
             );
+
+            -- Factory-return warranty terms published per SKU, including any
+            -- promotional addendum attached to a specific coupon.
+            CREATE TABLE IF NOT EXISTS warranty_terms (
+                term_id TEXT PRIMARY KEY,
+                sku TEXT NOT NULL,
+                base_days INTEGER NOT NULL,
+                coupon_id TEXT,
+                bonus_days INTEGER NOT NULL DEFAULT 0,
+                content_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE (sku, coupon_id)
+            );
+
+            -- One warranty per physical unit of a bound sale, frozen at the
+            -- unit's own coupon allocation at deal time.
+            CREATE TABLE IF NOT EXISTS warranties (
+                sale_id TEXT NOT NULL,
+                unit_id TEXT NOT NULL,
+                sku TEXT NOT NULL,
+                sold_day INTEGER NOT NULL,
+                term_id TEXT NOT NULL,
+                base_days INTEGER NOT NULL,
+                coupon_id TEXT,
+                bonus_days INTEGER NOT NULL,
+                warranty_days INTEGER NOT NULL,
+                current_version INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (sale_id, unit_id),
+                FOREIGN KEY (sale_id) REFERENCES sales(sale_id)
+            );
+
+            -- Append-only factory outage records.  Business days are integer
+            -- calendar days; [start_day, end_day) is half-open.  A late,
+            -- back-dated record simply gets a later record_id/seq; the
+            -- warranty version is recomputed from business dates.
+            CREATE TABLE IF NOT EXISTS outage_records (
+                record_id TEXT PRIMARY KEY,
+                sale_id TEXT NOT NULL,
+                unit_id TEXT NOT NULL,
+                start_day INTEGER NOT NULL,
+                end_day INTEGER NOT NULL,
+                registered_day INTEGER NOT NULL,
+                note TEXT NOT NULL DEFAULT '',
+                seq INTEGER NOT NULL UNIQUE,
+                created_at TEXT NOT NULL,
+                UNIQUE (sale_id, unit_id, start_day, end_day),
+                FOREIGN KEY (sale_id, unit_id) REFERENCES warranties(sale_id, unit_id)
+            );
+
+            -- Normal returns terminate warranty on the business day the return
+            -- becomes effective (the physical unit leaves after-sales cover).
+            CREATE TABLE IF NOT EXISTS warranty_exits (
+                sale_id TEXT NOT NULL,
+                unit_id TEXT NOT NULL,
+                exit_day INTEGER NOT NULL,
+                return_request_id TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (sale_id, unit_id),
+                FOREIGN KEY (sale_id, unit_id) REFERENCES warranties(sale_id, unit_id)
+            );
+
+            -- Every recomputation is preserved as an immutable version so an
+            -- answer previously given to a customer remains auditable forever.
+            CREATE TABLE IF NOT EXISTS warranty_versions (
+                sale_id TEXT NOT NULL,
+                unit_id TEXT NOT NULL,
+                version INTEGER NOT NULL,
+                warranty_days INTEGER NOT NULL,
+                paused_days INTEGER NOT NULL,
+                expiry_day INTEGER NOT NULL,
+                latest_start_day INTEGER,
+                cover_until_day INTEGER,
+                end_reason TEXT NOT NULL,
+                based_on_records TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (sale_id, unit_id, version)
+            );
+
+            -- Customer-facing warranty queries are stored against the version
+            -- that answered them; later recomputations never overwrite history.
+            CREATE TABLE IF NOT EXISTS warranty_queries (
+                query_id TEXT PRIMARY KEY,
+                sale_id TEXT NOT NULL,
+                unit_id TEXT NOT NULL,
+                query_day INTEGER NOT NULL,
+                warranty_version INTEGER NOT NULL,
+                result_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+
+            -- Approved repair methods: factory-approved duration and the
+            -- technician specialty required.
+            CREATE TABLE IF NOT EXISTS repair_methods (
+                method_id TEXT PRIMARY KEY,
+                sku TEXT NOT NULL,
+                duration_days INTEGER NOT NULL,
+                specialty TEXT NOT NULL,
+                content_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE (sku, method_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS technicians (
+                technician_id TEXT PRIMARY KEY,
+                specialty TEXT NOT NULL,
+                content_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+
+            -- Days a technician cannot work, stored half-open as [day, day+1).
+            CREATE TABLE IF NOT EXISTS technician_unavailable (
+                technician_id TEXT NOT NULL,
+                start_day INTEGER NOT NULL,
+                end_day INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (technician_id) REFERENCES technicians(technician_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS work_orders (
+                work_order_id TEXT PRIMARY KEY,
+                sale_id TEXT NOT NULL,
+                unit_id TEXT NOT NULL,
+                sku TEXT NOT NULL,
+                delivery_day INTEGER NOT NULL,
+                repair_value INTEGER NOT NULL,
+                method_ids_json TEXT NOT NULL,
+                warranty_version INTEGER NOT NULL,
+                status TEXT NOT NULL DEFAULT 'OPEN',
+                created_at TEXT NOT NULL,
+                UNIQUE (sale_id, unit_id)
+            );
+
+            -- Persisted batch optimisation runs and the per-order decision.
+            CREATE TABLE IF NOT EXISTS booking_batches (
+                batch_id TEXT PRIMARY KEY,
+                horizon_end_day INTEGER NOT NULL,
+                total_value INTEGER NOT NULL,
+                result_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS booking_decisions (
+                batch_id TEXT NOT NULL,
+                work_order_id TEXT NOT NULL,
+                accepted INTEGER NOT NULL,
+                start_day INTEGER,
+                end_day INTEGER,
+                method_id TEXT,
+                technician_id TEXT,
+                reason_code TEXT,
+                reason_detail TEXT,
+                warranty_version INTEGER NOT NULL,
+                result_json TEXT NOT NULL,
+                PRIMARY KEY (batch_id, work_order_id),
+                FOREIGN KEY (batch_id) REFERENCES booking_batches(batch_id)
+            );
+
+            -- The actual technician calendar reservations created by accepted
+            -- decisions; one technician can hold at most one unit per day.
+            CREATE TABLE IF NOT EXISTS technician_bookings (
+                booking_id TEXT PRIMARY KEY,
+                batch_id TEXT NOT NULL,
+                work_order_id TEXT NOT NULL,
+                technician_id TEXT NOT NULL,
+                day INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE (technician_id, day)
+            );
             """
         )

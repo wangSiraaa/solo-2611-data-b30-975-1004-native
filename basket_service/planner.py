@@ -21,6 +21,19 @@ Supported ops::
     inventory          skus?
     audit_sales
     audit_inventory
+    publish_warranty_term  term_id, sku, base_days, coupon_id?, bonus_days?
+    enroll_warranties      sale_id, sold_day, term_map?
+    get_warranty           sale_id, unit_id
+    register_outage        record_id, sale_id, unit_id, start_day, end_day, registered_day?, note?
+    mark_return_exit       sale_id, unit_id, return_day, return_request_id
+    query_warranty         query_id, sale_id, unit_id, query_day
+    warranty_versions      sale_id, unit_id
+    register_repair_method method_id, sku, duration_days, specialty
+    register_technician    technician_id, specialty, unavailable?
+    open_work_order        work_order_id, sale_id, unit_id, delivery_day, repair_value, method_ids
+    plan_repairs           batch_id, work_order_ids, horizon_end_day
+    get_repair_batch       batch_id
+    technician_calendar    technician_id
 
 Any step may set ``"expect_error": <code>`` (string or list) to assert that the
 operation is rejected with that error code; the transcript then records a
@@ -144,6 +157,80 @@ def _execute(service, step: Mapping[str, Any], env: Mapping[str, Any]) -> Any:
         return service.audit_sales()
     if op == "audit_inventory":
         return service.audit_inventory()
+    if op == "publish_warranty_term":
+        return service.publish_warranty_term(
+            _require(step, "term_id", op),
+            _require(step, "sku", op),
+            _require(step, "base_days", op),
+            coupon_id=step.get("coupon_id"),
+            bonus_days=step.get("bonus_days", 0),
+        )
+    if op == "enroll_warranties":
+        return service.enroll_warranties(
+            _require(step, "sale_id", op),
+            _require(step, "sold_day", op),
+            term_map=step.get("term_map"),
+        )
+    if op == "get_warranty":
+        return service.get_warranty(_require(step, "sale_id", op), _require(step, "unit_id", op))
+    if op == "register_outage":
+        return service.register_outage(
+            _require(step, "record_id", op),
+            _require(step, "sale_id", op),
+            _require(step, "unit_id", op),
+            _require(step, "start_day", op),
+            _require(step, "end_day", op),
+            registered_day=step.get("registered_day"),
+            note=step.get("note", ""),
+        )
+    if op == "mark_return_exit":
+        return service.mark_return_exit(
+            _require(step, "sale_id", op),
+            _require(step, "unit_id", op),
+            _require(step, "return_day", op),
+            _require(step, "return_request_id", op),
+        )
+    if op == "query_warranty":
+        return service.query_warranty(
+            _require(step, "query_id", op),
+            _require(step, "sale_id", op),
+            _require(step, "unit_id", op),
+            _require(step, "query_day", op),
+        )
+    if op == "warranty_versions":
+        return service.warranty_versions(_require(step, "sale_id", op), _require(step, "unit_id", op))
+    if op == "register_repair_method":
+        return service.register_repair_method(
+            _require(step, "method_id", op),
+            _require(step, "sku", op),
+            _require(step, "duration_days", op),
+            _require(step, "specialty", op),
+        )
+    if op == "register_technician":
+        return service.register_technician(
+            _require(step, "technician_id", op),
+            _require(step, "specialty", op),
+            unavailable=step.get("unavailable"),
+        )
+    if op == "open_work_order":
+        return service.open_work_order(
+            _require(step, "work_order_id", op),
+            _require(step, "sale_id", op),
+            _require(step, "unit_id", op),
+            _require(step, "delivery_day", op),
+            _require(step, "repair_value", op),
+            _require(step, "method_ids", op),
+        )
+    if op == "plan_repairs":
+        return service.plan_repairs(
+            _require(step, "batch_id", op),
+            _require(step, "work_order_ids", op),
+            _require(step, "horizon_end_day", op),
+        )
+    if op == "get_repair_batch":
+        return service.get_repair_batch(_require(step, "batch_id", op))
+    if op == "technician_calendar":
+        return service.technician_calendar(_require(step, "technician_id", op))
     raise PlanError(f"unknown op {op!r}", step_index=-1, step=step, transcript=[])
 
 
