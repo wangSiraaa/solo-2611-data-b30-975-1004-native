@@ -1,0 +1,128 @@
+{
+  "format": "clearance-round/v1",
+  "round_id": "r3",
+  "pinned": {
+    "A": 1,
+    "B": 1
+  },
+  "k": 1,
+  "page_size": 1,
+  "page_fee": 1,
+  "point_fee": 1,
+  "budget": 10,
+  "spent": 4,
+  "suspended": [
+    "z"
+  ],
+  "next_page": {
+    "A": 3,
+    "B": 2
+  },
+  "tail_max": {
+    "A": 0,
+    "B": 8
+  },
+  "exhausted": {
+    "A": true,
+    "B": false
+  },
+  "max_resident_skus": 2000,
+  "ledger_log": [
+    {
+      "action": "page",
+      "store": "A",
+      "book_no": 1,
+      "page_no": 1,
+      "fee": 1,
+      "rows": 1,
+      "tail_max": 8
+    },
+    {
+      "action": "page",
+      "store": "B",
+      "book_no": 1,
+      "page_no": 1,
+      "fee": 1,
+      "rows": 1,
+      "tail_max": 8
+    },
+    {
+      "action": "page",
+      "store": "A",
+      "book_no": 1,
+      "page_no": 2,
+      "fee": 1,
+      "rows": 1,
+      "tail_max": 0
+    },
+    {
+      "action": "point",
+      "store": "B",
+      "book_no": 1,
+      "sku": "x",
+      "fee": 1,
+      "net_qty": 0,
+      "absent_zero": true
+    }
+  ],
+  "sealed_result": {
+    "status": "sealed",
+    "round_id": "r3",
+    "k": 1,
+    "winners": [
+      {
+        "sku": "x",
+        "total_qty": 9
+      }
+    ],
+    "spent": 4,
+    "budget": 10,
+    "pinned_books": {
+      "A": 1,
+      "B": 1
+    },
+    "suspended": [
+      "z"
+    ],
+    "unseen_upper_at_seal": 8,
+    "evidence_skus": 3,
+    "ledger_log": [
+      {
+        "action": "page",
+        "store": "A",
+        "book_no": 1,
+        "page_no": 1,
+        "fee": 1,
+        "rows": 1,
+        "tail_max": 8
+      },
+      {
+        "action": "page",
+        "store": "B",
+        "book_no": 1,
+        "page_no": 1,
+        "fee": 1,
+        "rows": 1,
+        "tail_max": 8
+      },
+      {
+        "action": "page",
+        "store": "A",
+        "book_no": 1,
+        "page_no": 2,
+        "fee": 1,
+        "rows": 1,
+        "tail_max": 0
+      },
+      {
+        "action": "point",
+        "store": "B",
+        "book_no": 1,
+        "sku": "x",
+        "fee": 1,
+        "net_qty": 0,
+        "absent_zero": true
+      }
+    ]
+  }
+}

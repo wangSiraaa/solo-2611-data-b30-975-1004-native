@@ -1,0 +1,15 @@
+{
+  "store_id": "B",
+  "book_no": 1,
+  "revision": 1,
+  "page_no": 1,
+  "page_size": 1,
+  "rows": [
+    [
+      "y",
+      9
+    ]
+  ],
+  "tail_max": 8,
+  "has_more": true
+}

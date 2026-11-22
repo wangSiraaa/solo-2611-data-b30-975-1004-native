@@ -10,12 +10,18 @@ sql_param/
   bindings.py    值解码（null/int64/str/bytes/$bytes）与按出现顺序绑定
   plan_store.py  sql-param-plan/v1 计划发布、重放校验、持久化与公开格式校验
   executor.py    固定修订 → 整批预检 → 单事务依次执行 → 回执落盘
-  errors.py      统一异常类型
+  store_ledger.py 分店销售册：固定 SELECT 修订读 (货号,件数)、净计退货、
+                  不可变排序册、分页（附尾最大值）/点查/店员负票自查
+  clearance.py   总店清货链路：固定店册、按页/点查计费、SQLite 写穿证据外存
+                  （内存上限 2000 货号）、可证明的前 K 封榜与断线续取
+  planner.py     取证规划器：预算内贪心驱动翻页/点查，余额不足明确未封榜
+  errors.py      统一异常类型（含 LedgerError / ClearanceError）
 cli/
   publish_plan.py   独立 CLI：发布单个模板为计划文件
   run_batch.py      独立 CLI：读取批次 JSON 执行并输出回执路径
 demo_run.py        读取 materials/717 的完整端到端驱动（含与材料 plan_reader.py 互操作）
-tests/             39 个 unittest 用例
+demo_sales.py      分店册/总店清货榜端到端驱动（三次固定场景 + 早市 6→11 续取）
+tests/             58 个 unittest 用例
 ```
 
 ## 词法规则（为什么不能用正则替换）
@@ -116,9 +122,47 @@ python -m cli.run_batch  ./workdir/store ./workdir/notes.db ./workdir/receipts \
         b-ok batch.json
 ```
 
+## 分店销售册与总店清货榜
+
+回答一个关键问题：**货号没出现在任何分店榜首，总店仍可能把它排第一**——总店按
+各店净数之和排名。`z` 在 A、B 两店都只是第二名（8 件），但合计 16 高于单店榜首
+`x=9`、`y=9`，所以总店第一是 `z`。前提是取证必须覆盖"没见过的货号"的上界。
+
+### 分店侧（`store_ledger.py`）
+
+- 原始流水只留本店 SQLite；`StoreSalesBook.issue_book(revision)` 按固定
+  `template_id + revision` 的保存计划执行 SELECT，强制行形状 `(文本货号, 整数件数)`，
+  再按货号净计退货（同货号多行求和，含负票）。
+- 任一货号净数为负 → `LedgerError` 拒签，不落册；净数为零可省略页面行，但记入
+  `zero_skus`，点查返回确知零；每店每货号一册内最多一行。
+- 册是不可变快照 `store-sales-book/v1`，落盘
+  `<ledger_dir>/<store_id>/book<b>.json`。改模板或补票只能签发新册，旧册永不覆盖；
+  分页/点查都要求调用方固定册号，已送出的第一页只能续同一册。
+- 页面顺序固定为件数降序、货号升序；`read_page` 每页附 `tail_max`（剩余未取部分
+  的最大件数，空尾为 0）。`point_lookup` 对册目录缺席返回 `net_qty=None`——店册是
+  完整目录，缺席即本店无此货号流水（确切零），与"页未读到、只持上界"严格区分。
+- `check_negative_ticket` 让店员不接总店也能按同一修订直接读库核某货号含负票小计。
+
+### 总店侧（`clearance.py` + `planner.py`）
+
+- 一轮开始固定店册集合 `{store: book_no}`，之后分店出新册不影响本轮（不能串版）。
+- 整页计费 `page_fee`、点查计费 `point_fee`，费率与页大小构造时给定；任何会欠费的
+  动作直接 `ClearanceError`，已付回复落盘到 `replies/`，重取免费。
+- 证据 **SQLite 写穿**（`evidence.sqlite`）+ 内存 LRU 缓存，内存同时最多保留
+  `max_resident_skus`（默认 2000）个不同货号；状态 `state.json` 原子落盘，重开进程
+  从磁盘恢复全部证据、花费与每册续取页号。
+- 封榜只看已读证据：中选货号必须有确切合计；竞争者按乐观上界比较，只有在名次键
+  （件数降序、货号升序）上能严格排到最弱中选者之前才阻断出票；"完全没见过的货号"
+  以各店当前 `tail_max` 之和为上界，必须严格小于最弱中选件数。
+- `ClearancePlanner` 不追求理论最便宜路线：先取每册首页；未见上界仍可能翻盘且尾
+  最大值为正时翻页（发现赢家只能靠顺读）；否则点查钉死已见候选；两类动作都付不起
+  时返回 `unsealed` 并保留续取位置，`top_up` 后续跑同一轮。
+- 封榜结果保留所用店册、暂停货号表、封榜时未见上界与完整计费日志，可审计可复算。
+
 ## 验证
 
 ```bash
-python3 -m unittest discover -s tests -v   # 39 个用例
+python3 -m unittest discover -s tests -v   # 58 个用例
 python3 demo_run.py                         # 材料全流程 + plan_reader 互操作
+python3 demo_sales.py                       # 销售册/清货榜全流程（含早市预算续取）
 ```

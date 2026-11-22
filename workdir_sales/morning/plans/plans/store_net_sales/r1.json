@@ -1,0 +1,8 @@
+{
+  "format": "sql-param-plan/v1",
+  "template_id": "store_net_sales",
+  "revision": 1,
+  "source": "SELECT sku, SUM(qty) AS qty FROM sales_lines WHERE sku IS NOT NULL GROUP BY sku",
+  "sql": "SELECT sku, SUM(qty) AS qty FROM sales_lines WHERE sku IS NOT NULL GROUP BY sku",
+  "parameters": []
+}

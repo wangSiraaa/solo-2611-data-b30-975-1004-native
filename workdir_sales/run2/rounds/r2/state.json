@@ -1,0 +1,106 @@
+{
+  "format": "clearance-round/v1",
+  "round_id": "r2",
+  "pinned": {
+    "A": 2,
+    "B": 1
+  },
+  "k": 1,
+  "page_size": 1,
+  "page_fee": 1,
+  "point_fee": 1,
+  "budget": 10,
+  "spent": 3,
+  "suspended": [],
+  "next_page": {
+    "A": 2,
+    "B": 2
+  },
+  "tail_max": {
+    "A": 0,
+    "B": 8
+  },
+  "exhausted": {
+    "A": true,
+    "B": false
+  },
+  "max_resident_skus": 2000,
+  "ledger_log": [
+    {
+      "action": "page",
+      "store": "A",
+      "book_no": 2,
+      "page_no": 1,
+      "fee": 1,
+      "rows": 1,
+      "tail_max": 0
+    },
+    {
+      "action": "page",
+      "store": "B",
+      "book_no": 1,
+      "page_no": 1,
+      "fee": 1,
+      "rows": 1,
+      "tail_max": 8
+    },
+    {
+      "action": "point",
+      "store": "B",
+      "book_no": 1,
+      "sku": "x",
+      "fee": 1,
+      "net_qty": 0,
+      "absent_zero": true
+    }
+  ],
+  "sealed_result": {
+    "status": "sealed",
+    "round_id": "r2",
+    "k": 1,
+    "winners": [
+      {
+        "sku": "x",
+        "total_qty": 9
+      }
+    ],
+    "spent": 3,
+    "budget": 10,
+    "pinned_books": {
+      "A": 2,
+      "B": 1
+    },
+    "suspended": [],
+    "unseen_upper_at_seal": 8,
+    "evidence_skus": 2,
+    "ledger_log": [
+      {
+        "action": "page",
+        "store": "A",
+        "book_no": 2,
+        "page_no": 1,
+        "fee": 1,
+        "rows": 1,
+        "tail_max": 0
+      },
+      {
+        "action": "page",
+        "store": "B",
+        "book_no": 1,
+        "page_no": 1,
+        "fee": 1,
+        "rows": 1,
+        "tail_max": 8
+      },
+      {
+        "action": "point",
+        "store": "B",
+        "book_no": 1,
+        "sku": "x",
+        "fee": 1,
+        "net_qty": 0,
+        "absent_zero": true
+      }
+    ]
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "format": "store-sales-book/v1",
+  "store_id": "Z",
+  "book_no": 1,
+  "template_id": "store_net_sales",
+  "revision": 1,
+  "plan_source": "SELECT sku, SUM(qty) AS qty FROM sales_lines WHERE sku IS NOT NULL GROUP BY sku",
+  "page_order": "qty DESC, sku ASC",
+  "rows": [
+    [
+      "w",
+      2
+    ]
+  ],
+  "zero_skus": [
+    "q"
+  ],
+  "row_count": 1
+}
