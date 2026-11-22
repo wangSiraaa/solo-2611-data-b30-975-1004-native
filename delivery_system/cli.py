@@ -442,6 +442,19 @@ def cmd_demo(args: argparse.Namespace) -> int:
     return 0 if report["ok"] else 3
 
 
+def cmd_rights_demo(args: argparse.Namespace) -> int:
+    """End-to-end rights-chain + minimum-fee ticketing demonstration."""
+
+    import tempfile
+
+    from .rights_demo import run_rights_demo
+
+    with tempfile.TemporaryDirectory() as tmp:
+        report = run_rights_demo(tmp)
+    _emit(report)
+    return 0 if report["ok"] else 3
+
+
 # ----------------------------------------------------------------------
 # parser
 # ----------------------------------------------------------------------
@@ -517,6 +530,11 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--operations", required=True)
 
     add("demo", cmd_demo, "run the end-to-end materials/753 demo")
+    add(
+        "rights-demo",
+        cmd_rights_demo,
+        "run the rights-chain, revocation and minimum-fee ticketing demo",
+    )
     return p
 
 
