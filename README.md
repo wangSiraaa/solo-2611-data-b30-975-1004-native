@@ -10,9 +10,12 @@ cs/
   store.py     SQLite store: revisions, atomic bundles, cut-pinned queries,
                immutable products
   cli.py       command line entry point (`python -m cs`)
+wire/          old bit-by-bit telegraph: signed manifests, length-limited
+               alphabetic prefix codes with burned-in words, batch archives
 tests/         unit tests (python -m unittest discover -s tests)
 demo.py        runs materials/721 end to end and feeds consumer.py
 showcase.py    walks through every required scenario on the diamond
+wire_demo.py   full 15/14/17-bit telegraph workflow, bounce and archive cases
 ```
 
 ## Quick start
@@ -135,3 +138,75 @@ multi-label counting, same-name distinct ids, cut-pinned re-reads, immutable
 products, revision rules, withdraw/reopen, atomic bundle rejection (including
 catalog rollback when a fact revision conflicts), and a concurrent reader
 that must observe only pre- or post-bundle state.
+
+## Old bit-by-bit wire (`wire/`)
+
+A separate subsystem for the telegraph that only reads one bit at a time.
+The station side and the equipment operator side have different inputs and
+never share mutable state.
+
+### Station side — `wire/manifest.py`
+
+* A `Snapshot` is one already-published directory/fact cut (acyclic, no
+  duplicate ticket). A `Roster` is the signed delivery list for one cut.
+* Each active ticket is resolved against the **real directory** of that cut.
+  Its complete hit set over the ordered target nodes is one signal; the
+  targets are joined in manifest order. Several direct labels or several hit
+  paths never multiply the ticket. A ticket that hits no target gets the
+  dedicated none-signal.
+* Frequencies count **tickets**, never money, so zero-amount tickets count.
+  Zero-frequency signals still occupy their own slot in the signal table.
+* `verify_active_list` lets any station re-derive the cut and reject a
+  sign-off that omits or duplicates an active ticket.
+
+### Equipment side — `wire/codebook.py`
+
+`build_code_plan(signals, frequencies, max_length, burned=..., machine_id=...)`
+returns the minimum-total-bit code table or raises `UnloadableError`. Every
+word is non-empty binary, prefix-free, and its `0 < 1` lexicographic order
+matches the signal table, so the concatenated stream decodes left to right
+with no separator. Burned-in words are emitted exactly and the rest are
+configurable; zero-frequency signals keep an independent word.
+
+The builder models burned words as pinned leaves of the binary trie:
+
+1. a depth-first trie walk produces fixed burned slots and maximal free
+   *gap* nodes (a free subtree with no burned word is kept whole, not
+   pre-expanded, so trees shorter than the machine width stay representable);
+2. a memoized interval DP solves the length-limited alphabetic tree inside
+   each gap — a singleton occupies the node, a multi-leaf node splits and
+   charges the segment weight once per added edge;
+3. a second interval DP assigns contiguous leaf runs across the ordered
+   slots, charging each leaf for its trie depth and each burned word for its
+   fixed depth. Reconstruction walks the chosen splits into concrete words.
+
+Incompatible burned words (too long, prefixing another, or out of table
+order) and widths that cannot fit the table are all declared unloadable with
+the specific reason. `encode` raises `UnknownSignal` for a signal absent
+from the signed table; `decode` / `decode_trace` consume bits one at a time
+and reject dangling or non-binary streams.
+
+### Batches and archives — `wire/batch.py`
+
+A `WireBatch` seals a roster and a machine-specific plan into one immutable
+record containing the full signal table, the exact code table, the ticket
+order and the bit stream. Archives are append-only JSON lines; reloading an
+old batch decodes it under **its own** code table, so publishing a new code
+table never changes the interpretation of an already-sent batch.
+
+### Worked numbers
+
+For targets `A, B` and signals `A, AB, B`:
+
+| roster frequencies | machine | minimum bits | code table |
+|---|---|---|---|
+| 5, 2, 3 | width 2, no burns | 15 | `0, 10, 11` |
+| 2, 2, 6 (three A tickets re-routed to B) | width 2, no burns | 14 | `00, 01, 1` (short code on B) |
+| 5, 2, 3 | width 2, `A` burned to `00` | 17 | `00, 01, 1` |
+
+`python3 wire_demo.py` runs all three, prints the bit-by-bit decode back to
+ticket ownership, demonstrates out-of-table bounce and unloadable machines,
+and replays archived batches. The property tests cross-check the DP against
+an independent exhaustive trie enumeration for every small table, and run the
+stated 4–32 signal / width-12 scale in single-digit milliseconds.
+
